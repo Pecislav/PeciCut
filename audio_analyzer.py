@@ -153,6 +153,20 @@ def get_video_metadata(video_path: Path | str) -> Dict:
     }
 
 
+def format_moments_count(count: int) -> str:
+    """Czech plural declension for 'moment' (1 moment, 2-4 momenty, 5+ momentů)."""
+    n = abs(count)
+    if n % 100 in (11, 12, 13, 14):
+        return f"{count} momentů"
+    rem = n % 10
+    if rem == 1:
+        return f"{count} moment"
+    elif rem in (2, 3, 4):
+        return f"{count} momenty"
+    else:
+        return f"{count} momentů"
+
+
 def analyze_audio_stream(
     video_path: Path | str,
     track_index: int = 0,
@@ -298,7 +312,7 @@ def analyze_audio_stream(
                 msg = (
                     f"Analýza audia ({int(fraction * 100)}%): "
                     f"{cur_min:02d}:{cur_sec:02d} / {tot_min:02d}:{tot_sec:02d} "
-                    f"| Detekováno: {len(detected_moments)} momentů"
+                    f"| Detekováno: {format_moments_count(len(detected_moments))}"
                 )
                 progress_callback(fraction, msg)
 

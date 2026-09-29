@@ -51,6 +51,7 @@ from video_cutter import (
     limit_segments_to_target_duration,
     merge_overlapping_segments,
 )
+from segment_editor import SegmentReviewDialog
 
 APP_VERSION = "1.0.0"
 
@@ -219,11 +220,14 @@ TRANSLATIONS = {
         "btn_change_out": "Změnit výstupní složku...",
         "out_dir_default": "Výstup: Automaticky ve složce se zdrojovým videem",
         "out_dir_custom": "Výstup: ",
+        "chk_review_segments": "🎬 Před exportem otevřít editor momentů a náhledy",
+        "sub_review_segments": "Umožní přehrát nalezené momenty a ručně upravit, co se má sestříhat.",
 
         # PeciCut Section 5: Progress & Results
         "btn_process": "🚀 Spustit zpracování záznamu",
         "btn_cancel": "Zrušit",
         "status_ready": "Video připraveno. Nastavte parametry a klikněte na 'Spustit zpracování'.",
+        "status_waiting_editor": "Čekám na schválení momentů v editoru...",
         "btn_open_folder": "📂 Otevřít složku s výsledkem",
         "lbl_done": "✓ Hotovo!",
 
@@ -327,11 +331,14 @@ TRANSLATIONS = {
         "btn_change_out": "Change output folder...",
         "out_dir_default": "Output: Automatically in source video directory",
         "out_dir_custom": "Output: ",
+        "chk_review_segments": "🎬 Open interactive editor & video preview before export",
+        "sub_review_segments": "Allows you to preview detected moments and customize which clips to export.",
 
         # PeciCut Section 5: Progress & Results
         "btn_process": "🚀 Start Processing Recording",
         "btn_cancel": "Cancel",
         "status_ready": "Video ready. Configure parameters and click 'Start Processing'.",
+        "status_waiting_editor": "Waiting for moment selection in editor...",
         "btn_open_folder": "📂 Open Destination Folder",
         "lbl_done": "✓ Done!",
 
@@ -1589,6 +1596,10 @@ class AutoClipApp(ctk.CTk):
             self.btn_change_out.configure(text=self.tr("btn_change_out"))
             if not self.output_directory or (self.current_video_path and self.output_directory == self.current_video_path.parent):
                 self.lbl_output_dir.configure(text=self.tr("out_dir_default"))
+            if hasattr(self, "chk_review_segments"):
+                self.chk_review_segments.configure(text=self.tr("chk_review_segments"))
+            if hasattr(self, "sub_review_segments"):
+                self.sub_review_segments.configure(text=self.tr("sub_review_segments"))
 
         if hasattr(self, "btn_process"):
             self.btn_process.configure(text=self.tr("btn_process"))
@@ -2453,6 +2464,28 @@ class AutoClipApp(ctk.CTk):
         )
         self.lbl_output_dir.pack(side="left", fill="x", expand=True, padx=12)
 
+        # Option A: Interactive review editor & preview checkbox
+        self.review_segments_var = ctk.BooleanVar(value=True)
+        self.chk_review_segments = ctk.CTkCheckBox(
+            box,
+            text=self.tr("chk_review_segments"),
+            variable=self.review_segments_var,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            border_color=("#9CA3AF", "#3A3D4D"),
+            text_color=TEXT_TITLE
+        )
+        self.chk_review_segments.pack(anchor="w", padx=16, pady=(2, 2))
+
+        self.sub_review_segments = ctk.CTkLabel(
+            box,
+            text=self.tr("sub_review_segments"),
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_BODY
+        )
+        self.sub_review_segments.pack(anchor="w", padx=16, pady=(0, 14))
+
     def _build_progress_section(self, parent):
         """Action button, progress bar, textual feedback, and results card."""
         box = ctk.CTkFrame(parent, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
@@ -2825,6 +2858,7 @@ class AutoClipApp(ctk.CTk):
             "padding_after": float(self.slider_pad_after.get()),
             "min_gap": float(self.slider_gap.get()),
             "use_facecam_ai": self.facecam_ai_var.get(),
+            "open_editor": bool(self.review_segments_var.get()) if hasattr(self, "review_segments_var") else True,
             "export_edl": export_edl,
             "export_mp4": export_mp4,
             "output_dir": self.output_directory or self.current_video_path.parent,
@@ -2850,6 +2884,7 @@ class AutoClipApp(ctk.CTk):
         pad_after: float = params["padding_after"]
         min_gap: float = params["min_gap"]
         use_facecam_ai: bool = params.get("use_facecam_ai", False)
+        open_editor: bool = params.get("open_editor", True)
         export_edl: bool = params["export_edl"]
         export_mp4: bool = params["export_mp4"]
 
@@ -2927,16 +2962,54 @@ class AutoClipApp(ctk.CTk):
                         self._on_finished_ui(cancelled=True)
                         return
 
+            all_candidate_segments = list(merged_segments)
+
             # 4. Limit to target duration if requested (prioritizes highest hype/loudness peaks)
             if target_dur_sec and target_dur_sec > 0:
-                self._update_progress(0.75, f"Výběr nejlepších momentů pro cílovou délku {int(target_dur_sec//60)} min...")
-                merged_segments = limit_segments_to_target_duration(
-                    merged_segments,
+                self._update_progress(0.70, f"Výběr doporučených momentů pro cílovou délku {int(target_dur_sec//60)} min...")
+                recommended_segments = limit_segments_to_target_duration(
+                    all_candidate_segments,
                     max_duration_sec=target_dur_sec
                 )
+            else:
+                recommended_segments = list(all_candidate_segments)
+
+            # 4.5 Interactive Segment Review & Video Preview Editor (Option A)
+            if open_editor and all_candidate_segments:
+                self._update_progress(0.70, self.tr("status_waiting_editor"))
+                editor_event = threading.Event()
+                editor_result = {"confirmed": False, "segments": []}
+
+                def show_editor():
+                    SegmentReviewDialog(
+                        parent=self,
+                        video_path=video_path,
+                        all_segments=all_candidate_segments,
+                        recommended_segments=recommended_segments,
+                        target_duration_sec=target_dur_sec,
+                        current_lang=self.current_language,
+                        on_confirm=lambda chosen: on_editor_done(True, chosen),
+                        on_cancel=lambda: on_editor_done(False, [])
+                    )
+
+                def on_editor_done(confirmed: bool, chosen: List[Tuple]):
+                    editor_result["confirmed"] = confirmed
+                    editor_result["segments"] = chosen
+                    editor_event.set()
+
+                self.after(0, show_editor)
+                editor_event.wait()
+
+                if self.cancel_event.is_set() or not editor_result["confirmed"]:
+                    self._on_finished_ui(cancelled=True)
+                    return
+
+                merged_segments = editor_result["segments"]
+            else:
+                merged_segments = recommended_segments
 
             if not merged_segments:
-                self._on_finished_ui(error_msg="Po sloučení nezůstal žádný segment s dostatečnou délkou.")
+                self._on_finished_ui(error_msg="Po výběru nezůstal žádný segment k sestříhání.")
                 return
 
             stats = calculate_cut_statistics(total_duration, merged_segments)
