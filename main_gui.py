@@ -34,6 +34,11 @@ from ffmpeg_utils import (
 )
 from audio_analyzer import analyze_audio_stream, get_video_metadata
 from edl_generator import generate_cmx3600_edl
+from facecam_ai import (
+    FacecamAnalyzer,
+    analyze_candidate_facecam_segments,
+    ensure_ai_models_present,
+)
 from video_cutter import (
     calculate_cut_statistics,
     cut_video_lossless,
@@ -702,7 +707,55 @@ class AutoClipApp(ctk.CTk):
             text="💡 Doporučení pro začátek: 2.0 s zajistí plynulý sestřih bez trhání.",
             font=ctk.CTkFont(size=11),
             text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+
+        # 3.6 Facecam AI Feature Card
+        facecam_box = ctk.CTkFrame(box, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
+        facecam_box.pack(fill="x", padx=16, pady=(4, 12))
+
+        f_hdr = ctk.CTkFrame(facecam_box, fg_color="transparent")
+        f_hdr.pack(fill="x", padx=12, pady=(10, 4))
+
+        self.facecam_ai_var = ctk.BooleanVar(value=True)
+        self.chk_facecam_ai = ctk.CTkCheckBox(
+            f_hdr,
+            text="🤖 Facecam AI (Analýza výrazu obličeje a smíchu z webkamery)",
+            variable=self.facecam_ai_var,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            border_color="#3A3D4D",
+            text_color=TEXT_TITLE
+        )
+        self.chk_facecam_ai.pack(side="left")
+
+        q_ai = self._create_help_btn(
+            f_hdr,
+            facecam_box,
+            "Jak funguje Facecam AI:\n\n"
+            "1. Analýza výrazu obličeje: Hledá v záběru obličej a měří otevření úst (křik, leknutí, údiv) "
+            "a široký úsměv (záchvat smíchu).\n\n"
+            "2. Detekce pohybu těla a hlavy: Měří kinetickou energii (když streamer nadskočí leknutím, hází hlavou či gestikuluje).\n\n"
+            "3. Inteligentní hybridní skóre: Zkombinuje hlasitost audia s reakcí ve webkameře. Momenty s velkou reakcí v obličeji "
+            "dostanou nejvyšší prioritu pro finální sestřih, zatímco náhodné zvuky ze hry bez reakce v obličeji jsou odfiltrovány.\n\n"
+            "⚡ Běží bleskově dvoufázově — skenuje pouze kandidátské momenty (cca 5-10 sekund na 4h video)."
+        )
+        q_ai.pack(side="left", padx=(8, 0))
+
+        sub_ai = ctk.CTkLabel(
+            facecam_box,
+            text="Kombinuje audio analýzu s počítačovým viděním — prioritizuje nejlepší reakce obličeje, smích a leknutí.",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_BODY
+        )
+        sub_ai.pack(anchor="w", padx=12, pady=(0, 6))
+
+        ctk.CTkLabel(
+            facecam_box,
+            text="💡 Doporučení pro začátek: Ponechte zapnuté pro záznamy s webkamerou. Aplikace automaticky detekuje obličej.",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_REC
+        ).pack(anchor="w", padx=12, pady=(0, 10))
 
     def _build_export_section(self, parent):
         """4. Single-choice output format (Dropdown) and destination directory."""
@@ -1148,6 +1201,7 @@ class AutoClipApp(ctk.CTk):
             "padding_before": float(self.slider_pad_before.get()),
             "padding_after": float(self.slider_pad_after.get()),
             "min_gap": float(self.slider_gap.get()),
+            "use_facecam_ai": self.facecam_ai_var.get(),
             "export_edl": export_edl,
             "export_mp4": export_mp4,
             "output_dir": self.output_directory or self.current_video_path.parent,
@@ -1172,6 +1226,7 @@ class AutoClipApp(ctk.CTk):
         pad_before: float = params["padding_before"]
         pad_after: float = params["padding_after"]
         min_gap: float = params["min_gap"]
+        use_facecam_ai: bool = params.get("use_facecam_ai", False)
         export_edl: bool = params["export_edl"]
         export_mp4: bool = params["export_mp4"]
 
@@ -1190,7 +1245,7 @@ class AutoClipApp(ctk.CTk):
             self._update_progress(0.08, "Zahajuji analýzu hlasitosti audia...")
 
             def analysis_cb(fraction: float, message: str):
-                p = 0.10 + (fraction * 0.50)
+                p = 0.10 + (fraction * 0.52)
                 self._update_progress(p, message)
 
             raw_segments = analyze_audio_stream(
@@ -1214,16 +1269,41 @@ class AutoClipApp(ctk.CTk):
                 return
 
             # 3. Intelligent segment merging
-            self._update_progress(0.65, f"Inteligentní slučování segmentů (detekováno {len(raw_segments)} kandidátů)...")
+            self._update_progress(0.64, f"Inteligentní slučování segmentů (detekováno {len(raw_segments)} kandidátů)...")
             merged_segments = merge_overlapping_segments(
                 raw_segments,
                 min_gap=min_gap,
                 min_duration=0.5
             )
 
+            facecam_active = False
+            # 3.5 Facecam AI Vision Pass (if enabled and in highlights mode)
+            if use_facecam_ai and mode == "highlights" and merged_segments:
+                self._update_progress(0.66, "🤖 Příprava Facecam AI (kontrola modelů YuNet a detektoru reakcí)...")
+                models_ok = ensure_ai_models_present(
+                    progress_callback=lambda msg: self._update_progress(0.66, msg)
+                )
+                if models_ok:
+                    facecam_active = True
+                    def ai_progress(pct: float, msg: str):
+                        p = 0.67 + (pct / 100.0) * 0.08
+                        self._update_progress(p, f"🤖 {msg}")
+
+                    merged_segments = analyze_candidate_facecam_segments(
+                        video_path=video_path,
+                        candidate_segments=merged_segments,
+                        sample_fps=2.0,
+                        progress_callback=ai_progress,
+                        cancel_event=self.cancel_event
+                    )
+
+                    if self.cancel_event.is_set():
+                        self._on_finished_ui(cancelled=True)
+                        return
+
             # 4. Limit to target duration if requested (prioritizes highest hype/loudness peaks)
             if target_dur_sec and target_dur_sec > 0:
-                self._update_progress(0.68, f"Výběr nejlepších momentů pro cílovou délku {int(target_dur_sec//60)} min...")
+                self._update_progress(0.75, f"Výběr nejlepších momentů pro cílovou délku {int(target_dur_sec//60)} min...")
                 merged_segments = limit_segments_to_target_duration(
                     merged_segments,
                     max_duration_sec=target_dur_sec
@@ -1234,6 +1314,7 @@ class AutoClipApp(ctk.CTk):
                 return
 
             stats = calculate_cut_statistics(total_duration, merged_segments)
+            stats["facecam_active"] = facecam_active
             base_name = video_path.stem
             suffix_mode = "highlights" if mode == "highlights" else "nosilence"
 
@@ -1327,6 +1408,8 @@ class AutoClipApp(ctk.CTk):
                         f"⏱️ Původní délka: {stats['original_str']}  ➔  Výsledný sestřih: {stats['kept_str']}",
                         f"🚀 Ušetřeno: {stats['percent_reduced']:.1f}% z celkového času záznamu!",
                     ]
+                    if stats.get("facecam_active"):
+                        summary_lines.append("🤖 Facecam AI: Výrazy obličeje, smích a pohyb zohledněny pro výběr nejlepších reakcí.")
                     if generated_files:
                         summary_lines.append(f"📁 Vytvořen soubor: {generated_files[0].name}")
 

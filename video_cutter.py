@@ -99,8 +99,10 @@ def limit_segments_to_target_duration(
     if total_current <= max_duration_sec:
         return [(round(s[0], 2), round(s[1], 2)) for s in segments]
 
-    # Rank segments by loudness (peak dBFS) descending
+    # Rank segments by composite AI hype score (index 4) or loudness (peak dBFS, index 2) descending
     def rank_key(s):
+        if len(s) >= 5:
+            return s[4]  # composite_score (AI Facecam + Audio Hype)
         if len(s) >= 3:
             return s[2]  # peak dBFS (higher is louder)
         return s[1] - s[0]  # fallback to duration
