@@ -1,79 +1,78 @@
+<div align="center">
+
 # Pecislav Studio 🎬
+### *The Ultimate Desktop Creator Suite by Pecislav*
 
-> **All-in-One Creator Suite pro streamery a tvůrce obsahu od Pecislava.**  
-> Multiplatformní desktopová aplikace pro macOS i Windows v moderním Twitch/YouTube Creator stylu (oranžovo-černý design) postavená na CustomTkinter, OpenCV YuNet AI a bezztrátovém FFmpeg enginu.
+[![Version](https://img.shields.io/badge/Verze-1.0.0-FF6D00?style=for-the-badge&logo=rocket)](https://github.com/Pecislav/PecislavStudio)
+[![Platform](https://img.shields.io/badge/Platforma-macOS%20%7C%20Windows-22C55E?style=for-the-badge&logo=apple)](https://github.com/Pecislav/PecislavStudio)
+[![Edition](https://img.shields.io/badge/Edice-PRO%20CREATOR-FF6D00?style=for-the-badge)](https://github.com/Pecislav/PecislavStudio)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 
----
-
-## 🧭 Architektura Pecislav Studio
-
-Pecislav Studio nabízí moderní All-in-One rozhraní s postranním panelem:
-- 🎬 **PeciCut** (Aktivní modul): Automatický střihač záznamů streamů podle reakcí hlasu a webkamery.
-- ⚙️ **Nastavení Studia**: Centrální správa barevného motivu (Systémový / Světlý bílý / Tmavý černý), 1-click kontrola integrity stažených součástí (FFmpeg, AI modely) a ověřování aktualizací přímo z GitHubu.
-
----
-
-## 📋 Klíčové funkce modulu PeciCut
-
-1. **🤖 Facecam Computer Vision AI (Reakce z webkamery)**:
-   - **Analýza výrazu obličeje**: Detekuje otevřená ústa při výkřiku, leknutí či údivu a široký úsměv při záchvatu smíchu.
-   - **Kinetický pohyb hlavy a těla**: Měří zrychlení a pohyb (když streamer nadskočí leknutím, hází hlavou či slaví).
-   - **Dvoufázová hybridní AI architektura**: Fáze 1 bleskově otestuje zvuk a vytyčí kandidáty, Fáze 2 vzorkuje pouze tyto momenty (cca 5–10 sekund na 4h záznam).
-   - Momenty s velkou vizuální reakcí dostávají nejvyšší prioritu, zatímco náhodné herní rány bez reakce streamera jsou odfiltrovány!
-2. **Cílová maximální délka sestřihu (YouTube / Shorts optimalizace)**:
-   - Možnost zvolit cílovou stopáž: **Bez limitu**, **5 minut**, **10 minut**, **15 minut**, **20 minut** nebo **30 minut**.
-   - PeciCut ohodnotí zachycené momenty podle AI skóre a hlasitosti a **vybere nejzábavnější reakce**, které se přesně vejdou do zadaného limitu, a seřadí je zpět do přirozeného toku streamu.
-3. **Doporučené hodnoty a nápověda s otazníky (?)**:
-   - U každého nastavení je jasně vypsané **doporučení pro začátek** (práh -14 dBFS, kontext 4s/2s, sloučení 2s).
-   - Vedle každého parametru je klikací tlačítko **(?)**, které otevře přímo v aplikaci srozumitelné plovoucí vysvětlení funkce.
-4. **Dokonale vycentrovaný PRO CREATOR design**:
-   - Vertikálně centrovaný oranžový štítek `PRO CREATOR` sladěný s typografií.
-   - Možnost vložit vlastní logo do `assets/logo.png`.
-5. **1-Click Automatické stažení FFmpeg**:
-   - V postranním panelu svítí stav: `✓ FFmpeg připraven` nebo `⚠️ FFmpeg chybí`.
-   - Jedním kliknutím Pecislav Studio samo stáhne a zprovozní oficiální statické binárky do `bin/`.
-6. **Plynulé ovládání sliderů**:
-   - Kolečko myši plynule posouvá celou stránku, slidery se mění výhradně přímým kliknutím a tažením myší do stran.
-7. **Podpora multi-track audia z OBS**:
-   - Výběr samostatné stopy mikrofonu, analýza probíhá proudově přes paměť (< 50 MB RAM i pro 6h 4K záznamy).
-8. **Bleskový export (Single Choice)**:
-   - 🎥 **Hotové MP4 video**: Bezztrátový střih přes FFmpeg stream copy (`-c copy` concat demuxer) během 1–2 minut.
-   - 📋 **EDL Timeline**: CMX 3600 standard pro DaVinci Resolve a Adobe Premiere Pro.
+<p align="center">
+  <b>Komplexní All-in-One ekosystém pro streamery, YouTubery a tvůrce obsahu.</b><br>
+  Automatický střih dlouhých streamů (2–6 hodin), hybridní Facecam AI pro zachycení nejlepších reakcí a bleskový bezztrátový export bez ztráty kvality.
+</p>
 
 ---
 
-## 🏗️ Struktura projektu
+</div>
 
-```text
-autoclip_highlight_cutter/
-├── assets/               # Složka pro logo (logo.png) a ikonu studia
-├── bin/                  # Lokální složka pro přibalené binárky FFmpeg
-├── models/               # AI modely (YuNet ONNX, Haar Cascades pro obličej a smích)
-├── facecam_ai.py         # Facecam AI engine (detekce obličeje, úst, smíchu a pohybu)
-├── ffmpeg_utils.py       # Detekce a 1-click automatické stažení FFmpeg
-├── audio_analyzer.py     # Proudová extrakce audia a záznam peak dBFS
-├── edl_generator.py      # CMX 3600 standard EDL generátor s timecode matematikou
-├── video_cutter.py       # Slučování segmentů, AI řazení na cílovou délku a concat demuxer
-├── main_gui.py           # Hlavní Pecislav Studio CustomTkinter GUI
-├── requirements.txt      # Seznam závislostí
-└── README.md             # Kompletní dokumentace
-```
+## 🧭 O aplikaci Pecislav Studio
+
+**Pecislav Studio** je modulární desktopový software navržený speciálně pro potřeby moderních tvůrců na Twitchi a YouTube. Namísto instalace desítek samostatných jednoúčelových skriptů sjednocuje klíčové nástroje pro střih, video analýzu a správu obsahu do jednoho vyladěného centra s tmavým a světlým Twitch/YouTube Creator motivem.
 
 ---
 
-## 🚀 Spuštění aplikace
+## 🧩 Moduly Studia
 
+### 🎬 1. PeciCut — Highlight Cutter & Reaction Engine
+Hlavní modul pro automatický střih záznamů streamů a videí:
+- **🤖 Facecam Computer Vision AI**: V reálném čase analyzuje webkameru pomocí neuronových sítí OpenCV YuNet. Detekuje otevřená ústa při výkřiku, leknutí či údivu, široký úsměv při záchvatu smíchu a kinetický pohyb těla.
+- **⚡ Dvoufázová hybridní analýza**: 
+  - *Fáze 1*: Proudová analýza audio křivky z OBS mikrofonu (vytyčí kandidáty za pár sekund s minimální spotřebou RAM).
+  - *Fáze 2*: Počítačové vidění vzorkuje pouze tyto momenty a vybere skutečné reakce tvůrce (odfiltruje náhodné rány ze hry, kde streamer nereaguje).
+- **⏱️ Cílová maximální stopáž**: Možnost omezit délku sestřihu na **5, 10, 15, 20, 30 minut** nebo **bez limitu**. PeciCut inteligentně seřadí zachycené momenty a vybere ty nejzábavnější, které se přesně vejdou do zadaného času.
+- **🎞️ Bezztrátový FFmpeg Stream Copy**: Střih probíhá bezztrátově přes concat demuxer (`-c copy`) bez zdlouhavého překódování — 4hodinový stream je sestříhán během 1 až 2 minut v plné původní kvalitě.
+- **📋 CMX 3600 EDL Export**: Možnost exportovat timeline přímo do DaVinci Resolve a Adobe Premiere Pro pro finální úpravy.
+
+### ⚙️ 2. Nastavení Studia — Centrální správa & Diagnostika
+- **🎨 Zkosené vizuální motivy**: 3 stylizované grafické karty s ostrým šikmým přelivem barev:
+  - *Systémová*: Tříbarevný přeliv (černá / oranžová / bílá)
+  - *Bílá*: Dvoubarevný přeliv (oranžová / bílá)
+  - *Černá*: Dvoubarevný přeliv (oranžová / černá)
+- **📦 Kontrola stažených součástí**: 1-click ověření dostupnosti FFmpeg enginu, AI modelů (YuNet ONNX, Haar Cascades) a pracovních adresářů.
+- **⬇️ Automatický 1-Click downloader**: Pokud FFmpeg nebo modely chybí, Studio je samo stáhne na pozadí z oficiálních repozitářů.
+- **🚀 Verze a aktualizace**: Přímé napojení na GitHub Releases pro automatickou kontrolu nových verzí.
+
+---
+
+## 🛠️ Požadavky a instalace
+
+### Požadavky:
+- **macOS** (Apple Silicon i Intel) nebo **Windows 10/11**
+- **Python 3.10** nebo novější
+- FFmpeg (aplikace umí stáhnout automaticky jedním kliknutím)
+
+### Rychlé spuštění:
 ```bash
-cd /Users/matejpesek/.gemini/antigravity/scratch/autoclip_highlight_cutter
+# 1. Klonování repozitáře
+git clone https://github.com/Pecislav/PecislavStudio.git
+cd PecislavStudio
+
+# 2. Instalace závislostí
 python3 -m pip install -r requirements.txt
+
+# 3. Spuštění Pecislav Studio
 python3 main_gui.py
 ```
 
 ---
 
-## 📦 Zabalení do samostatné aplikace (.app / .exe)
+## 📦 Sestavení samostatné aplikace (.app / .exe)
 
-### macOS (.app bundle)
+Aplikaci lze snadno zabalit do jednoho spustitelného balíčku bez nutnosti mít nainstalovaný Python:
+
+### macOS (.app):
 ```bash
 pyinstaller --noconfirm --onedir --windowed \
   --name "PecislavStudio" \
@@ -82,7 +81,7 @@ pyinstaller --noconfirm --onedir --windowed \
   main_gui.py
 ```
 
-### Windows (.exe soubor)
+### Windows (.exe):
 ```bash
 pyinstaller --noconfirm --onedir --windowed ^
   --name "PecislavStudio" ^
@@ -90,4 +89,13 @@ pyinstaller --noconfirm --onedir --windowed ^
   --add-data "assets;assets" ^
   main_gui.py
 ```
-Výsledný spustitelný program najdete ve složce `dist/PecislavStudio`.
+
+Výsledná aplikace se vytvoří ve složce `dist/PecislavStudio`.
+
+---
+
+## 👤 Autor
+
+Vytvořil **Pecislav** pro tvůrčí komunitu.
+- GitHub: [@Pecislav](https://github.com/Pecislav)
+- Projekt: **Pecislav Studio (Pro Creator Edition)**
