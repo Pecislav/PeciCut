@@ -1,0 +1,7 @@
+customtkinter>=6.0.0
+numpy>=1.24.0
+pydub>=0.25.1
+pillow>=10.0.0
+darkdetect>=0.8.0
+packaging>=23.0
+pyinstaller>=6.0.0

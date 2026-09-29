@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+
+# Build and Packaging
+build/
+dist/
+*.spec
+*.app/
+*.exe
+
+# Large Binaries and Temporary Folders
+bin/ffmpeg
+bin/ffprobe
+bin/ffmpeg.exe
+bin/ffprobe.exe
+autoclip_chunks_*/
+_autoclip_tmp*/
+*.mp4
+*.mkv
+*.mov
+*.edl
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
