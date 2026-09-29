@@ -93,10 +93,15 @@ class AutoClipApp(ctk.CTk):
         self.is_downloading_ffmpeg = False
         self.last_output_path: Optional[Path] = None
 
+        # Smooth scrolling state
+        self._scroll_accum: float = 0.0
+        self._scroll_after_id = None
+
         # Build UI
         self._build_header()
-        self._build_main_scrollable_container()
         self._build_footer()
+        self._build_main_scrollable_container()
+        self._setup_smooth_scrolling()
 
         # Check FFmpeg availability at launch
         self._check_ffmpeg_status()
@@ -156,36 +161,116 @@ class AutoClipApp(ctk.CTk):
         return btn
 
     # -------------------------------------------------------------------------
-    # Helper: Disable Slider MouseWheel & Forward to Page Scroll
+    # High-Performance Smooth Scroller Engine
     # -------------------------------------------------------------------------
+
+    def _setup_smooth_scrolling(self):
+        """
+        Replaces default CustomTkinter mousewheel bindings with an optimized,
+        throttled 60 FPS scrolling engine with boundary collision guards.
+        Completely eliminates UI stuttering and event queue flooding, especially
+        near the bottom and top boundaries.
+        """
+        # Unbind default CustomTkinter global bindings
+        self.unbind_all("<MouseWheel>")
+        self.unbind_all("<Button-4>")
+        self.unbind_all("<Button-5>")
+
+        # Register optimized global scroll handlers
+        self.bind_all("<MouseWheel>", self._on_optimized_mousewheel)
+        self.bind_all("<Button-4>", self._on_optimized_mousewheel)
+        self.bind_all("<Button-5>", self._on_optimized_mousewheel)
+
+    def _on_optimized_mousewheel(self, event):
+        """
+        Processes mousewheel events with delta coalescing and boundary guards.
+        """
+        if not hasattr(self, "scroll_frame") or self.scroll_frame is None:
+            return "break"
+
+        canvas = self.scroll_frame._parent_canvas
+        top, bottom = canvas.yview()
+
+        # If entire content fits in viewport, no scrolling needed
+        if top <= 0.001 and bottom >= 0.999:
+            return "break"
+
+        # Normalize delta across operating systems
+        if event.num == 4:
+            raw_delta = 1.0   # Linux scroll up
+        elif event.num == 5:
+            raw_delta = -1.0  # Linux scroll down
+        elif sys.platform == "darwin":
+            raw_delta = float(event.delta)
+        elif sys.platform.startswith("win"):
+            raw_delta = float(event.delta) / 120.0 * 2.5
+        else:
+            raw_delta = float(event.delta) if event.delta else 0.0
+
+        if raw_delta == 0:
+            return "break"
+
+        # On macOS/Windows, negative delta is scrolling DOWN (content moves up)
+        step = -raw_delta
+
+        # Boundary Collision Guard:
+        # If already at the bottom and scrolling down, drop dead inertia events instantly!
+        if step > 0 and bottom >= 0.998:
+            self._scroll_accum = 0.0
+            return "break"
+
+        # If already at the top and scrolling up, drop dead inertia events instantly!
+        if step < 0 and top <= 0.002:
+            self._scroll_accum = 0.0
+            return "break"
+
+        self._scroll_accum += step
+
+        # Throttle redraws to ~60 FPS (every 8ms)
+        if self._scroll_after_id is None:
+            self._scroll_after_id = self.after(8, self._flush_smooth_scroll)
+
+        return "break"
+
+    def _flush_smooth_scroll(self):
+        """Applies accumulated scroll delta in a single smooth step."""
+        self._scroll_after_id = None
+        if abs(self._scroll_accum) < 0.01:
+            self._scroll_accum = 0.0
+            return
+
+        if not hasattr(self, "scroll_frame") or self.scroll_frame is None:
+            self._scroll_accum = 0.0
+            return
+
+        canvas = self.scroll_frame._parent_canvas
+        top, bottom = canvas.yview()
+
+        # Final boundary check before executing canvas scroll
+        if self._scroll_accum > 0 and bottom >= 0.998:
+            self._scroll_accum = 0.0
+            return
+        if self._scroll_accum < 0 and top <= 0.002:
+            self._scroll_accum = 0.0
+            return
+
+        units = int(round(self._scroll_accum))
+        if units == 0:
+            units = 1 if self._scroll_accum > 0 else -1
+
+        canvas.yview("scroll", units, "units")
+        self._scroll_accum = 0.0
 
     def _disable_slider_mousewheel(self, slider: ctk.CTkSlider):
         """
-        Disables value modification on mouse wheel scroll for a slider.
-        Forwards the scroll event to the main scrollable frame so page scrolling
-        remains fluid and sliders are only modified when explicitly clicked & dragged.
+        Disables value modification on mouse wheel scroll for a slider,
+        leaving it to the global smooth scroller so page scrolling is completely fluid.
         """
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             try:
                 slider._canvas.unbind(seq)
             except Exception:
                 pass
-
-        def forward_scroll(event):
-            if not hasattr(self, "scroll_frame") or self.scroll_frame is None:
-                return
-            canvas = self.scroll_frame._parent_canvas
-            if sys.platform.startswith("win"):
-                canvas.yview("scroll", -int(event.delta / 6), "units")
-            elif sys.platform == "darwin":
-                canvas.yview("scroll", -event.delta, "units")
-            else:
-                direction = -1 if event.num == 4 else 1
-                canvas.yview_scroll(direction, "units")
-
-        slider._canvas.bind("<MouseWheel>", forward_scroll, add=True)
-        slider._canvas.bind("<Button-4>", forward_scroll, add=True)
-        slider._canvas.bind("<Button-5>", forward_scroll, add=True)
 
     # -------------------------------------------------------------------------
     # UI Builder Methods
