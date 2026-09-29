@@ -38,3 +38,10 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# User Configuration & Local Data
+config.json
+*.local.json
+cache/
+peci_cache/
+

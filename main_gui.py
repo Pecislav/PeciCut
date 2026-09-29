@@ -15,9 +15,12 @@ Modules:
 
 from __future__ import annotations
 
+import json
 import os
 import platform
+import shutil
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -50,6 +53,348 @@ from video_cutter import (
 )
 
 APP_VERSION = "1.0.0"
+
+# -----------------------------------------------------------------------------
+# Configuration Management & Defaults
+# -----------------------------------------------------------------------------
+CONFIG_FILE = get_base_dir() / "config.json"
+DEFAULT_CONFIG = {
+    "language": "en",
+    "theme": "system",
+    "default_export_dir": "",
+    "auto_open_folder": True
+}
+
+
+def load_app_config() -> dict:
+    """Loads configuration from config.json, merged with default values."""
+    if CONFIG_FILE.is_file():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    cfg = DEFAULT_CONFIG.copy()
+                    cfg.update(data)
+                    return cfg
+        except Exception as e:
+            print(f"[Config] Error reading config.json: {e}")
+    return DEFAULT_CONFIG.copy()
+
+
+def save_app_config(config: dict):
+    """Saves configuration dictionary to config.json."""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Config] Error saving config.json: {e}")
+
+
+# -----------------------------------------------------------------------------
+# Cache & Maintenance Utilities
+# -----------------------------------------------------------------------------
+def get_app_cache_info() -> Tuple[int, List[Path]]:
+    """
+    Finds all temporary chunk directories, temp files, and caches created by Pecislav Studio.
+    Returns (total_bytes, list_of_paths_to_clean).
+    """
+    paths_to_clean: List[Path] = []
+    total_bytes = 0
+
+    # 1. System temp files with autoclip_ or peci prefix
+    tmp_dir = Path(tempfile.gettempdir())
+    if tmp_dir.is_dir():
+        try:
+            for p in tmp_dir.iterdir():
+                try:
+                    if p.name.startswith(("autoclip_", "peci_", "pecicut_", "pecislav_")):
+                        paths_to_clean.append(p)
+                        if p.is_file():
+                            total_bytes += p.stat().st_size
+                        elif p.is_dir():
+                            for f in p.rglob("*"):
+                                if f.is_file():
+                                    total_bytes += f.stat().st_size
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 2. Local app cache directory if exists
+    local_cache = get_base_dir() / "cache"
+    if local_cache.is_dir():
+        try:
+            for f in local_cache.rglob("*"):
+                try:
+                    if f.is_file():
+                        total_bytes += f.stat().st_size
+                        paths_to_clean.append(f)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 3. Local __pycache__ in base directory
+    try:
+        for pyc in get_base_dir().rglob("__pycache__"):
+            paths_to_clean.append(pyc)
+            for f in pyc.rglob("*"):
+                if f.is_file():
+                    total_bytes += f.stat().st_size
+    except Exception:
+        pass
+
+    return total_bytes, paths_to_clean
+
+
+def clear_app_cache() -> Tuple[int, int]:
+    """
+    Deletes temporary files and returns (freed_bytes, cleaned_count).
+    """
+    total_bytes, paths = get_app_cache_info()
+    cleaned_count = 0
+    freed_bytes = 0
+
+    for p in paths:
+        try:
+            if p.is_file():
+                sz = p.stat().st_size
+                p.unlink(missing_ok=True)
+                freed_bytes += sz
+                cleaned_count += 1
+            elif p.is_dir():
+                for f in p.rglob("*"):
+                    if f.is_file():
+                        freed_bytes += f.stat().st_size
+                        cleaned_count += 1
+                shutil.rmtree(p, ignore_errors=True)
+        except Exception:
+            pass
+
+    return freed_bytes, cleaned_count
+
+
+# -----------------------------------------------------------------------------
+# Bilingual UI Translations (Čeština / English)
+# -----------------------------------------------------------------------------
+TRANSLATIONS = {
+    "cs": {
+        # App Shell & Navigation
+        "app_title": "Pecislav Studio • Pro Creator",
+        "brand_title": "Pecislav Studio",
+        "nav_modules": "MODULY",
+        "nav_pecicut": "  🎬  PeciCut",
+        "nav_system": "SYSTÉM",
+        "nav_settings": "  ⚙️  Nastavení",
+        "header_pecicut_title": "🎬 PeciCut",
+        "header_pecicut_subtitle": "Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
+        "header_settings_title": "⚙️ Nastavení Studia",
+        "header_settings_subtitle": "Barevný motiv, jazyk, export a aktualizace Pecislav Studio",
+        "footer_text": f"Pecislav Studio v{APP_VERSION} • Creator Suite by Pecislav • Lossless FFmpeg Engine",
+
+        # PeciCut Section 1: File selection
+        "sec_file_title": "1. Výběr zdrojového video záznamu",
+        "btn_select_file": "📁 Procházet soubory...",
+        "no_file_selected": "Zatím nebyl vybrán žádný soubor (.mp4, .mkv, .mov)",
+        "meta_info_placeholder": "ℹ️ Po výběru souboru se zde zobrazí délka, FPS, rozlišení a nalezené audio stopy.",
+
+        # PeciCut Section 2: Audio Track
+        "sec_audio_title": "2. Výběr audio stopy pro analýzu (Mikrofon / Hlas)",
+        "sec_audio_sub": "Vyberte stopu s vaším hlasem, aby se detekoval váš křik a reakce namísto zvuků ze hry.",
+
+        # PeciCut Section 3: Detection Parameters
+        "sec_params_title": "3. Režim detekce a parametry střihu",
+        "mode_highlights": "🔥 Akční highlighty (výkřiky, smích, hlasité momenty)",
+        "mode_nosilence": "✂️ Celý stream bez hluchých míst (odstranění ticha)",
+        "lbl_target_dur_title": "Cílová maximální délka sestřihu:",
+        "lbl_threshold": "Práh hlasitosti / řevu (dBFS):",
+        "lbl_pad_before": "Délka náběhu před momentem (Padding Before):",
+        "lbl_pad_after": "Délka doznívání po momentu (Padding After):",
+        "lbl_gap": "Minimální ticho pro rozdělení (Min Gap):",
+        "chk_facecam": "🤖 Facecam AI (Analýza výrazu obličeje a smíchu z webkamery)",
+        "sub_facecam": "Kombinuje audio analýzu s počítačovým viděním — prioritizuje nejlepší reakce obličeje, smích a leknutí.",
+
+        # PeciCut Section 4: Export
+        "sec_export_title": "4. Formát výstupu a cílová složka",
+        "btn_change_out": "Změnit výstupní složku...",
+        "out_dir_default": "Výstup: Automaticky ve složce se zdrojovým videem",
+        "out_dir_custom": "Výstup: ",
+
+        # PeciCut Section 5: Progress & Results
+        "btn_process": "🚀 Spustit zpracování záznamu",
+        "btn_cancel": "Zrušit",
+        "status_ready": "Video připraveno. Nastavte parametry a klikněte na 'Spustit zpracování'.",
+        "btn_open_folder": "📂 Otevřít složku s výsledkem",
+        "lbl_done": "✓ Hotovo!",
+
+        # Settings Card 1: Themes
+        "card_theme_title": "🎨 Barevný motiv aplikace",
+        "card_theme_sub": "Vyberte vizuální styl studia (kliknutím na náhled):",
+        "theme_system": "Systémová",
+        "theme_light": "Bílá",
+        "theme_dark": "Černá",
+
+        # Settings Card 2: Language
+        "card_lang_title": "🌍 Jazyk aplikace / Language",
+        "card_lang_sub": "Zvolte preferovaný jazyk uživatelského rozhraní Pecislav Studio:",
+        "lbl_select_language": "Aktivní jazyk rozhraní:",
+
+        # Settings Card 3: Default Export & Folder Behavior
+        "card_export_title": "📁 Výchozí export a chování složek",
+        "card_export_sub": "Nastavte kam se mají ukládat hotové sestřihy a chování po dokončení:",
+        "lbl_default_folder": "Výchozí složka pro export:",
+        "lbl_folder_beside": "(Automaticky ve složce se zdrojovým videem)",
+        "btn_set_export_folder": "📁 Změnit složku...",
+        "btn_reset_export_folder": "↺ Resetovat",
+        "chk_auto_open_folder": "Automaticky otevřít cílovou složku po dokončení střihu",
+
+        # Settings Card 4: Performance / CPU
+        "card_perf_title": "⚡ Výkon a vytížení procesoru (CPU)",
+        "card_perf_sub": "Přizpůsobte vytížení procesoru při renderování a AI analýze:",
+        "perf_cores_detected": "🖥️ Detekováno: {cores} jader CPU",
+        "perf_max_opt": "🚀 Maximální výkon (všechna jádra)",
+        "perf_balanced_opt": "🎮 Vyvážený / Herní režim (šetří CPU)",
+        "perf_max_desc": "• Využívá 100% dostupných CPU jader pro nejrychlejší možný střih a detekci obličeje.",
+        "perf_balanced_desc": "• Omezuje vytížení na polovinu jader ({half_cores}). Šetří procesor a grafiku pro plynulé hraní či streamování na Twitch/YouTube.",
+
+        # Settings Card 5: Maintenance / Cache
+        "card_cache_title": "🧹 Údržba a dočasná data (Cache)",
+        "card_cache_sub": "Vyčistěte dočasné video segmenty, fragmenty a mezipaměť po předchozích střizích:",
+        "lbl_cache_heading": "Stav dočasné mezipaměti:",
+        "btn_clear_cache": "🗑️ Promazat mezipaměť",
+        "cache_clean": "✓ Mezipaměť je čistá (0.0 MB)",
+        "cache_found": "Nalezeno {size_mb} MB dočasných dat",
+        "cache_cleared_msg": "✓ Mezipaměť byla úspěšně promazána (uvolněno {freed_mb} MB).",
+
+        # Settings Card 6: Components
+        "card_comp_title": "📦 Kontrola stažených součástí",
+        "btn_recheck": "🔄 Zkontrolovat",
+        "comp_ffmpeg_ok": "✓ FFmpeg & FFprobe: Připraveno",
+        "comp_ffmpeg_fail": "❌ FFmpeg & FFprobe: Chybí",
+        "comp_ffmpeg_desc_ok": "Nalezeno v systému: {name}",
+        "comp_ffmpeg_desc_fail": "Potřebné pro analýzu audia a střih videa",
+        "comp_models_ok": "✓ Facecam AI modely: Připraveno (3/3)",
+        "comp_models_fail": "❌ Facecam AI modely: Nalezeno {cnt}/3",
+        "comp_models_desc_ok": "YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí",
+        "comp_models_desc_fail": "Modely chybí pro analýzu webkamery",
+        "comp_dirs_ok": "✓ Pracovní adresáře aplikace: V pořádku",
+        "comp_dirs_desc": "models/, assets/, bin/ jsou připraveny k použití",
+
+        # Settings Card 7: Version & Updates
+        "card_ver_title": "🚀 Verze aplikace a aktualizace",
+        "btn_check_updates": "🔍 Zkontrolovat aktualizace",
+        "installed_ver": f"Nainstalovaná verze: Pecislav Studio v{APP_VERSION} (by Pecislav)",
+        "update_status_latest": "✓ Používáte nejnovější verzi aplikace.",
+    },
+    "en": {
+        # App Shell & Navigation
+        "app_title": "Pecislav Studio • Pro Creator",
+        "brand_title": "Pecislav Studio",
+        "nav_modules": "MODULES",
+        "nav_pecicut": "  🎬  PeciCut",
+        "nav_system": "SYSTEM",
+        "nav_settings": "  ⚙️  Settings",
+        "header_pecicut_title": "🎬 PeciCut",
+        "header_pecicut_subtitle": "Automated highlight cutter for long Twitch & YouTube recordings (2-6h) based on mic audio",
+        "header_settings_title": "⚙️ Studio Settings",
+        "header_settings_subtitle": "Color theme, language, export and updates for Pecislav Studio",
+        "footer_text": f"Pecislav Studio v{APP_VERSION} • Creator Suite by Pecislav • Lossless FFmpeg Engine",
+
+        # PeciCut Section 1: File selection
+        "sec_file_title": "1. Select Source Video Recording",
+        "btn_select_file": "📁 Browse files...",
+        "no_file_selected": "No file selected yet (.mp4, .mkv, .mov)",
+        "meta_info_placeholder": "ℹ️ File duration, FPS, resolution, and audio tracks will appear here after selection.",
+
+        # PeciCut Section 2: Audio Track
+        "sec_audio_title": "2. Select Audio Track for Analysis (Microphone / Voice)",
+        "sec_audio_sub": "Select the track containing your voice so screams and reactions are analyzed instead of game audio.",
+
+        # PeciCut Section 3: Detection Parameters
+        "sec_params_title": "3. Detection Mode & Cutting Parameters",
+        "mode_highlights": "🔥 Action Highlights (screams, laughter, hype moments)",
+        "mode_nosilence": "✂️ Full Stream without Silence (remove quiet pauses)",
+        "lbl_target_dur_title": "Target maximum video duration:",
+        "lbl_threshold": "Loudness / Scream threshold (dBFS):",
+        "lbl_pad_before": "Padding before highlight (Padding Before):",
+        "lbl_pad_after": "Padding after highlight (Padding After):",
+        "lbl_gap": "Minimum silence to split (Min Gap):",
+        "chk_facecam": "🤖 Facecam AI (Facial expression & laughter analysis from webcam)",
+        "sub_facecam": "Combines audio analysis with computer vision — prioritizes highest facial reactions, laughs and screams.",
+
+        # PeciCut Section 4: Export
+        "sec_export_title": "4. Output Format & Destination Directory",
+        "btn_change_out": "Change output folder...",
+        "out_dir_default": "Output: Automatically in source video directory",
+        "out_dir_custom": "Output: ",
+
+        # PeciCut Section 5: Progress & Results
+        "btn_process": "🚀 Start Processing Recording",
+        "btn_cancel": "Cancel",
+        "status_ready": "Video ready. Configure parameters and click 'Start Processing'.",
+        "btn_open_folder": "📂 Open Destination Folder",
+        "lbl_done": "✓ Done!",
+
+        # Settings Card 1: Themes
+        "card_theme_title": "🎨 Application Color Theme",
+        "card_theme_sub": "Select studio visual style (click on preview):",
+        "theme_system": "System",
+        "theme_light": "Light",
+        "theme_dark": "Dark",
+
+        # Settings Card 2: Language
+        "card_lang_title": "🌍 Application Language / Jazyk",
+        "card_lang_sub": "Select your preferred user interface language for Pecislav Studio:",
+        "lbl_select_language": "Active UI Language:",
+
+        # Settings Card 3: Default Export & Folder Behavior
+        "card_export_title": "📁 Default Export & Folder Behavior",
+        "card_export_sub": "Set where exported highlights are saved and how the studio behaves upon completion:",
+        "lbl_default_folder": "Default export folder:",
+        "lbl_folder_beside": "(Automatically in source video folder)",
+        "btn_set_export_folder": "📁 Change folder...",
+        "btn_reset_export_folder": "↺ Reset",
+        "chk_auto_open_folder": "Automatically open destination folder when export completes",
+
+        # Settings Card 4: Performance / CPU
+        "card_perf_title": "⚡ Performance & CPU Load",
+        "card_perf_sub": "Adjust CPU utilization during video rendering and AI facecam analysis:",
+        "perf_cores_detected": "🖥️ Detected: {cores} CPU cores",
+        "perf_max_opt": "🚀 Maximum Performance (all cores)",
+        "perf_balanced_opt": "🎮 Balanced / Gaming Mode (saves CPU)",
+        "perf_max_desc": "• Utilizes 100% of available CPU cores for fastest possible highlight cutting and facecam analysis.",
+        "perf_balanced_desc": "• Limits processing to half the CPU cores ({half_cores}). Preserves CPU and GPU for smooth gaming or streaming on Twitch/YouTube.",
+
+        # Settings Card 5: Maintenance / Cache
+        "card_cache_title": "🧹 Maintenance & Temporary Cache",
+        "card_cache_sub": "Clean up temporary video segments, chunks, and cache from previous cut sessions:",
+        "lbl_cache_heading": "Temporary cache status:",
+        "btn_clear_cache": "🗑️ Clear Cache",
+        "cache_clean": "✓ Cache is clean (0.0 MB)",
+        "cache_found": "Found {size_mb} MB of temporary data",
+        "cache_cleared_msg": "✓ Cache cleared successfully (freed {freed_mb} MB).",
+
+        # Settings Card 6: Components
+        "card_comp_title": "📦 Component Health Check",
+        "btn_recheck": "🔄 Recheck",
+        "comp_ffmpeg_ok": "✓ FFmpeg & FFprobe: Ready",
+        "comp_ffmpeg_fail": "❌ FFmpeg & FFprobe: Missing",
+        "comp_ffmpeg_desc_ok": "Found on system: {name}",
+        "comp_ffmpeg_desc_fail": "Required for audio analysis and video cutting",
+        "comp_models_ok": "✓ Facecam AI models: Ready (3/3)",
+        "comp_models_fail": "❌ Facecam AI models: Found {cnt}/3",
+        "comp_models_desc_ok": "YuNet ONNX & Haar Cascades in models/ for face reaction detection",
+        "comp_models_desc_fail": "Models missing for webcam reaction analysis",
+        "comp_dirs_ok": "✓ Application Working Directories: OK",
+        "comp_dirs_desc": "models/, assets/, bin/ ready for use",
+
+        # Settings Card 7: Version & Updates
+        "card_ver_title": "🚀 Application Version & Updates",
+        "btn_check_updates": "🔍 Check for Updates",
+        "installed_ver": f"Installed version: Pecislav Studio v{APP_VERSION} (by Pecislav)",
+        "update_status_latest": "✓ You are running the latest version.",
+    }
+}
 
 # -----------------------------------------------------------------------------
 # Creator Branding Theme Colors (Light / Dark Adaptive Tuples)
@@ -347,15 +692,28 @@ class AutoClipApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # Configuration
+        self.config = load_app_config()
+        self.current_language = self.config.get("language", "en")
+        self.auto_open_folder = bool(self.config.get("auto_open_folder", True))
+        self.default_export_dir = self.config.get("default_export_dir", "")
+        self.saved_theme = self.config.get("theme", "system")
+
+        if self.saved_theme in ["light", "dark", "system"]:
+            ctk.set_appearance_mode(self.saved_theme.capitalize())
+
         # Window settings
-        self.title("Pecislav Studio • Pro Creator")
+        self.title(self.tr("app_title"))
         self.geometry("1060x860")
         self.minsize(940, 720)
         self.configure(fg_color=BG_WINDOW)
 
         # Application state
         self.current_video_path: Optional[Path] = None
-        self.output_directory: Optional[Path] = None
+        if self.default_export_dir and Path(self.default_export_dir).is_dir():
+            self.output_directory = Path(self.default_export_dir)
+        else:
+            self.output_directory = None
         self.video_metadata: Optional[Dict] = None
         self.processing_thread: Optional[threading.Thread] = None
         self.download_thread: Optional[threading.Thread] = None
@@ -372,6 +730,22 @@ class AutoClipApp(ctk.CTk):
 
         # Check FFmpeg availability at launch
         self._check_ffmpeg_status()
+
+    def tr(self, key: str, **kwargs) -> str:
+        """Retrieves localized text for the given translation key based on self.current_language."""
+        lang = getattr(self, "current_language", "cs")
+        text_dict = TRANSLATIONS.get(lang, TRANSLATIONS["cs"])
+        val = text_dict.get(key, TRANSLATIONS["cs"].get(key, key))
+        if kwargs:
+            try:
+                return val.format(**kwargs)
+            except Exception:
+                return val
+        return val
+
+    def _get_configured_threads(self) -> int:
+        """Returns optimal thread count for FFmpeg and OpenCV (0 = all cores automatically)."""
+        return 0
 
 
     # -------------------------------------------------------------------------
@@ -553,17 +927,18 @@ class AutoClipApp(ctk.CTk):
         ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=14, pady=12)
 
         # Navigation Label
-        ctk.CTkLabel(
+        self.lbl_sidebar_modules = ctk.CTkLabel(
             self.sidebar_frame,
-            text="MODULY",
+            text=self.tr("nav_modules"),
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=TEXT_MUTED
-        ).pack(anchor="w", padx=18, pady=(4, 6))
+        )
+        self.lbl_sidebar_modules.pack(anchor="w", padx=18, pady=(4, 6))
 
         # Nav 1: PeciCut Module
         self.btn_nav_pecicut = ctk.CTkButton(
             self.sidebar_frame,
-            text="  🎬  PeciCut",
+            text=self.tr("nav_pecicut"),
             anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"),
             height=38,
@@ -576,17 +951,18 @@ class AutoClipApp(ctk.CTk):
         self.btn_nav_pecicut.pack(fill="x", padx=12, pady=4)
 
         # System Section Label
-        ctk.CTkLabel(
+        self.lbl_sidebar_system = ctk.CTkLabel(
             self.sidebar_frame,
-            text="SYSTÉM",
+            text=self.tr("nav_system"),
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=TEXT_MUTED
-        ).pack(anchor="w", padx=18, pady=(16, 6))
+        )
+        self.lbl_sidebar_system.pack(anchor="w", padx=18, pady=(16, 6))
 
         # Nav 2: Settings Module
         self.btn_nav_settings = ctk.CTkButton(
             self.sidebar_frame,
-            text="  ⚙️  Nastavení",
+            text=self.tr("nav_settings"),
             anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"),
             height=38,
@@ -643,7 +1019,7 @@ class AutoClipApp(ctk.CTk):
 
         self.lbl_header_title = ctk.CTkLabel(
             title_row,
-            text="🎬 PeciCut",
+            text=self.tr("header_pecicut_title"),
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=TEXT_TITLE
         )
@@ -651,7 +1027,7 @@ class AutoClipApp(ctk.CTk):
 
         self.lbl_header_subtitle = ctk.CTkLabel(
             left_box,
-            text="Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
+            text=self.tr("header_pecicut_subtitle"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY
         )
@@ -669,7 +1045,7 @@ class AutoClipApp(ctk.CTk):
         self._build_progress_section(self.page_pecicut)
 
     def _build_settings_view(self, parent):
-        """Builds the native Settings view for Pecislav Studio."""
+        """Builds the native Settings view for Pecislav Studio with all configuration cards."""
         self.page_settings = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
 
         # ---------------------------------------------------------------------
@@ -678,19 +1054,21 @@ class AutoClipApp(ctk.CTk):
         theme_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
         theme_card.pack(fill="x", pady=(0, 12))
 
-        ctk.CTkLabel(
+        self.lbl_theme_title = ctk.CTkLabel(
             theme_card,
-            text="🎨 Barevný motiv aplikace",
+            text=self.tr("card_theme_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(anchor="w", padx=16, pady=(14, 2))
+        )
+        self.lbl_theme_title.pack(anchor="w", padx=16, pady=(14, 2))
 
-        ctk.CTkLabel(
+        self.lbl_theme_sub = ctk.CTkLabel(
             theme_card,
-            text="Vyberte vizuální styl studia (kliknutím na náhled):",
+            text=self.tr("card_theme_sub"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+        )
+        self.lbl_theme_sub.pack(anchor="w", padx=16, pady=(0, 12))
 
         themes_row = ctk.CTkFrame(theme_card, fg_color="transparent")
         themes_row.pack(fill="x", padx=16, pady=(0, 16))
@@ -698,9 +1076,9 @@ class AutoClipApp(ctk.CTk):
         # 3 theme previews with sharp slanted cuts
         self.theme_images = {}
         theme_modes = [
-            ("system", "Systémová"),
-            ("light", "Bílá"),
-            ("dark", "Černá")
+            ("system", self.tr("theme_system")),
+            ("light", self.tr("theme_light")),
+            ("dark", self.tr("theme_dark"))
         ]
         for mode_key, _ in theme_modes:
             pil_img = create_slanted_theme_image(mode_key, w=125, h=42, r=7)
@@ -732,7 +1110,218 @@ class AutoClipApp(ctk.CTk):
         self._highlight_selected_theme(current_mode)
 
         # ---------------------------------------------------------------------
-        # 2. Kontrola stažených součástí
+        # 2. Jazyk aplikace / Language
+        # ---------------------------------------------------------------------
+        lang_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        lang_card.pack(fill="x", pady=(0, 12))
+
+        self.lbl_lang_title = ctk.CTkLabel(
+            lang_card,
+            text=self.tr("card_lang_title"),
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_lang_title.pack(anchor="w", padx=16, pady=(14, 2))
+
+        self.lbl_lang_sub = ctk.CTkLabel(
+            lang_card,
+            text=self.tr("card_lang_sub"),
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_BODY
+        )
+        self.lbl_lang_sub.pack(anchor="w", padx=16, pady=(0, 10))
+
+        lang_box = ctk.CTkFrame(lang_card, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
+        lang_box.pack(fill="x", padx=16, pady=(0, 16))
+
+        l_inner = ctk.CTkFrame(lang_box, fg_color="transparent")
+        l_inner.pack(fill="x", padx=14, pady=12)
+
+        self.lbl_lang_select = ctk.CTkLabel(
+            l_inner,
+            text=self.tr("lbl_select_language"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_lang_select.pack(side="left")
+
+        self.lang_menu = ctk.CTkOptionMenu(
+            l_inner,
+            values=["🇬🇧 English", "🇨🇿 Čeština"],
+            command=self._on_language_select,
+            width=200,
+            height=34,
+            corner_radius=6,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            dropdown_font=ctk.CTkFont(size=13),
+            fg_color=ORANGE_PRIMARY,
+            button_color=ORANGE_HOVER,
+            button_hover_color="#CC5200",
+            dropdown_fg_color=("#F3F4F6", "#1E2028"),
+            dropdown_hover_color=ORANGE_PRIMARY,
+            dropdown_text_color=TEXT_TITLE,
+            text_color="#FFFFFF"
+        )
+        self.lang_menu.pack(side="right")
+        self.lang_menu.set("🇬🇧 English" if self.current_language == "en" else "🇨🇿 Čeština")
+
+        # ---------------------------------------------------------------------
+        # 3. Výchozí export a chování složek
+        # ---------------------------------------------------------------------
+        export_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        export_card.pack(fill="x", pady=(0, 12))
+
+        self.lbl_export_title = ctk.CTkLabel(
+            export_card,
+            text=self.tr("card_export_title"),
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_export_title.pack(anchor="w", padx=16, pady=(14, 2))
+
+        self.lbl_export_sub = ctk.CTkLabel(
+            export_card,
+            text=self.tr("card_export_sub"),
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_BODY
+        )
+        self.lbl_export_sub.pack(anchor="w", padx=16, pady=(0, 10))
+
+        # Folder location row
+        folder_box = ctk.CTkFrame(export_card, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
+        folder_box.pack(fill="x", padx=16, pady=(0, 10))
+
+        f_inner = ctk.CTkFrame(folder_box, fg_color="transparent")
+        f_inner.pack(fill="x", padx=12, pady=10)
+
+        self.lbl_def_folder_title = ctk.CTkLabel(
+            f_inner,
+            text=self.tr("lbl_default_folder"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_def_folder_title.pack(anchor="w")
+
+        curr_def_text = self.default_export_dir if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else self.tr("lbl_folder_beside")
+        curr_def_color = TEXT_TITLE if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else TEXT_MUTED
+
+        self.lbl_def_folder_path = ctk.CTkLabel(
+            f_inner,
+            text=curr_def_text,
+            font=ctk.CTkFont(size=12),
+            text_color=curr_def_color,
+            anchor="w"
+        )
+        self.lbl_def_folder_path.pack(fill="x", pady=(2, 8))
+
+        f_btn_row = ctk.CTkFrame(f_inner, fg_color="transparent")
+        f_btn_row.pack(fill="x")
+
+        self.btn_change_default_export = ctk.CTkButton(
+            f_btn_row,
+            text=self.tr("btn_set_export_folder"),
+            command=self._on_change_default_export,
+            width=160,
+            height=30,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            text_color="#FFFFFF"
+        )
+        self.btn_change_default_export.pack(side="left", padx=(0, 8))
+
+        self.btn_reset_default_export = ctk.CTkButton(
+            f_btn_row,
+            text=self.tr("btn_reset_export_folder"),
+            command=self._on_reset_default_export,
+            width=110,
+            height=30,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#E5E7EB", "#20222B"),
+            hover_color=("#D1D5DB", "#2B2E3B"),
+            text_color=TEXT_TITLE
+        )
+        self.btn_reset_default_export.pack(side="left")
+
+        # Auto open checkbox
+        self.auto_open_folder_var = ctk.BooleanVar(value=self.auto_open_folder)
+        self.chk_auto_open_folder = ctk.CTkCheckBox(
+            export_card,
+            text=self.tr("chk_auto_open_folder"),
+            variable=self.auto_open_folder_var,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            border_color=("#9CA3AF", "#3A3D4D"),
+            text_color=TEXT_TITLE,
+            command=self._on_toggle_auto_open
+        )
+        self.chk_auto_open_folder.pack(anchor="w", padx=16, pady=(0, 16))
+
+        # ---------------------------------------------------------------------
+        # 4. Údržba a dočasná data (Cache)
+        # ---------------------------------------------------------------------
+        cache_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        cache_card.pack(fill="x", pady=(0, 12))
+
+        self.lbl_cache_title = ctk.CTkLabel(
+            cache_card,
+            text=self.tr("card_cache_title"),
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_cache_title.pack(anchor="w", padx=16, pady=(14, 2))
+
+        self.lbl_cache_sub = ctk.CTkLabel(
+            cache_card,
+            text=self.tr("card_cache_sub"),
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_BODY
+        )
+        self.lbl_cache_sub.pack(anchor="w", padx=16, pady=(0, 12))
+
+        cache_box = ctk.CTkFrame(cache_card, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
+        cache_box.pack(fill="x", padx=16, pady=(0, 16))
+
+        c_inner = ctk.CTkFrame(cache_box, fg_color="transparent")
+        c_inner.pack(fill="x", padx=14, pady=12)
+
+        c_info = ctk.CTkFrame(c_inner, fg_color="transparent")
+        c_info.pack(side="left", fill="x", expand=True)
+
+        self.lbl_cache_heading = ctk.CTkLabel(
+            c_info,
+            text=self.tr("lbl_cache_heading"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_cache_heading.pack(anchor="w")
+
+        self.lbl_cache_status = ctk.CTkLabel(
+            c_info,
+            text=self.tr("cache_clean"),
+            font=ctk.CTkFont(size=11),
+            text_color="#22C55E"
+        )
+        self.lbl_cache_status.pack(anchor="w", pady=(2, 0))
+
+        self.btn_clean_cache = ctk.CTkButton(
+            c_inner,
+            text=self.tr("btn_clear_cache"),
+            command=self._on_clear_cache_click,
+            width=175,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=("#FEE2E2", "#2B1616"),
+            hover_color=("#FECACA", "#3E1E1E"),
+            text_color=("#DC2626", "#FF6B6B"),
+            border_width=1,
+            border_color=("#FCA5A5", "#5E2222")
+        )
+        self.btn_clean_cache.pack(side="right")
+
+        # ---------------------------------------------------------------------
+        # 6. Kontrola stažených součástí
         # ---------------------------------------------------------------------
         comp_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
         comp_card.pack(fill="x", pady=(0, 12))
@@ -740,16 +1329,17 @@ class AutoClipApp(ctk.CTk):
         comp_hdr = ctk.CTkFrame(comp_card, fg_color="transparent")
         comp_hdr.pack(fill="x", padx=16, pady=(14, 8))
 
-        ctk.CTkLabel(
+        self.lbl_comp_title = ctk.CTkLabel(
             comp_hdr,
-            text="📦 Kontrola stažených součástí",
+            text=self.tr("card_comp_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(side="left")
+        )
+        self.lbl_comp_title.pack(side="left")
 
-        btn_recheck = ctk.CTkButton(
+        self.btn_recheck = ctk.CTkButton(
             comp_hdr,
-            text="🔄 Zkontrolovat",
+            text=self.tr("btn_recheck"),
             width=110,
             height=28,
             font=ctk.CTkFont(size=11, weight="bold"),
@@ -758,13 +1348,13 @@ class AutoClipApp(ctk.CTk):
             text_color=TEXT_TITLE,
             command=self._refresh_settings_components
         )
-        btn_recheck.pack(side="right")
+        self.btn_recheck.pack(side="right")
 
         self.comp_rows_frame = ctk.CTkFrame(comp_card, fg_color="transparent")
         self.comp_rows_frame.pack(fill="x", padx=16, pady=(0, 14))
 
         # ---------------------------------------------------------------------
-        # 3. Verze aplikace a aktualizace
+        # 7. Verze aplikace a aktualizace
         # ---------------------------------------------------------------------
         ver_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
         ver_card.pack(fill="x", pady=(0, 12))
@@ -772,16 +1362,17 @@ class AutoClipApp(ctk.CTk):
         ver_hdr = ctk.CTkFrame(ver_card, fg_color="transparent")
         ver_hdr.pack(fill="x", padx=16, pady=(14, 8))
 
-        ctk.CTkLabel(
+        self.lbl_ver_title = ctk.CTkLabel(
             ver_hdr,
-            text="🚀 Verze aplikace a aktualizace",
+            text=self.tr("card_ver_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(side="left")
+        )
+        self.lbl_ver_title.pack(side="left")
 
         self.btn_update = ctk.CTkButton(
             ver_hdr,
-            text="🔍 Zkontrolovat aktualizace",
+            text=self.tr("btn_check_updates"),
             width=175,
             height=28,
             font=ctk.CTkFont(size=11, weight="bold"),
@@ -795,23 +1386,217 @@ class AutoClipApp(ctk.CTk):
         ver_body = ctk.CTkFrame(ver_card, fg_color="transparent")
         ver_body.pack(fill="x", padx=16, pady=(0, 16))
 
-        ctk.CTkLabel(
+        self.lbl_installed_ver = ctk.CTkLabel(
             ver_body,
-            text=f"Nainstalovaná verze: Pecislav Studio v{APP_VERSION} (by Pecislav)",
+            text=self.tr("installed_ver"),
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(anchor="w")
+        )
+        self.lbl_installed_ver.pack(anchor="w")
 
         self.lbl_update_status = ctk.CTkLabel(
             ver_body,
-            text="✓ Používáte nejnovější verzi aplikace.",
+            text=self.tr("update_status_latest"),
             font=ctk.CTkFont(size=11),
             text_color="#22C55E"
         )
         self.lbl_update_status.pack(anchor="w", pady=(4, 0))
 
-        # Render current static state quietly on load (NO animated spinner loop)
+        # Initial quiet renders
+        self._refresh_cache_display()
         self._render_components_static()
+
+    def _on_language_select(self, choice: str):
+        """Switches active studio language, updates config, and refreshes UI."""
+        if "English" in choice:
+            self.current_language = "en"
+        else:
+            self.current_language = "cs"
+        self.config["language"] = self.current_language
+        save_app_config(self.config)
+        self._apply_translations()
+
+    def _on_change_default_export(self):
+        """Allows user to select a default export directory for all projects."""
+        folder = filedialog.askdirectory(title=self.tr("card_export_title"))
+        if folder:
+            self.default_export_dir = folder
+            self.config["default_export_dir"] = folder
+            save_app_config(self.config)
+            self.lbl_def_folder_path.configure(text=folder, text_color=TEXT_TITLE)
+            if not self.current_video_path or not self.output_directory:
+                self.output_directory = Path(folder)
+                if hasattr(self, "lbl_output_dir"):
+                    self.lbl_output_dir.configure(
+                        text=f"{self.tr('out_dir_custom')}{folder}",
+                        text_color=TEXT_TITLE
+                    )
+
+    def _on_reset_default_export(self):
+        """Resets default export directory to save beside the original video."""
+        self.default_export_dir = ""
+        self.config["default_export_dir"] = ""
+        save_app_config(self.config)
+        self.lbl_def_folder_path.configure(
+            text=self.tr("lbl_folder_beside"),
+            text_color=TEXT_MUTED
+        )
+        if not self.current_video_path:
+            self.output_directory = None
+            if hasattr(self, "lbl_output_dir"):
+                self.lbl_output_dir.configure(
+                    text=self.tr("out_dir_default"),
+                    text_color=TEXT_BODY
+                )
+
+    def _on_toggle_auto_open(self):
+        """Toggles automatic destination folder opening upon export completion."""
+        self.auto_open_folder = bool(self.auto_open_folder_var.get())
+        self.config["auto_open_folder"] = self.auto_open_folder
+        save_app_config(self.config)
+
+    def _refresh_cache_display(self):
+        """Updates temporary cache size indicator."""
+        if not hasattr(self, "lbl_cache_status") or not self.lbl_cache_status.winfo_exists():
+            return
+        total_bytes, paths = get_app_cache_info()
+        if total_bytes > 0:
+            mb = total_bytes / (1024 * 1024)
+            self.lbl_cache_status.configure(
+                text=self.tr("cache_found", size_mb=f"{mb:.1f}"),
+                text_color=ORANGE_ACCENT_TEXT
+            )
+        else:
+            self.lbl_cache_status.configure(
+                text=self.tr("cache_clean"),
+                text_color="#22C55E"
+            )
+
+    def _on_clear_cache_click(self):
+        """Cleans temporary files and reports freed space."""
+        freed, cnt = clear_app_cache()
+        freed_mb = freed / (1024 * 1024)
+        if freed_mb < 0.1 and freed > 0:
+            freed_str = f"{freed / 1024:.1f} KB"
+        else:
+            freed_str = f"{freed_mb:.1f} MB"
+        self.lbl_cache_status.configure(
+            text=self.tr("cache_cleared_msg", freed_mb=freed_str),
+            text_color="#22C55E"
+        )
+
+    def _apply_translations(self):
+        """Refreshes all texts across navigation, headers, and cards to match self.current_language."""
+        # 1. Window & Sidebar
+        self.title(self.tr("app_title"))
+        if hasattr(self, "lbl_sidebar_modules"):
+            self.lbl_sidebar_modules.configure(text=self.tr("nav_modules"))
+        if hasattr(self, "btn_nav_pecicut"):
+            self.btn_nav_pecicut.configure(text=self.tr("nav_pecicut"))
+        if hasattr(self, "lbl_sidebar_system"):
+            self.lbl_sidebar_system.configure(text=self.tr("nav_system"))
+        if hasattr(self, "btn_nav_settings"):
+            self.btn_nav_settings.configure(text=self.tr("nav_settings"))
+        if hasattr(self, "lbl_footer"):
+            self.lbl_footer.configure(text=self.tr("footer_text"))
+
+        # 2. Header
+        if self.current_view == "pecicut":
+            self.lbl_header_title.configure(text=self.tr("header_pecicut_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_pecicut_subtitle"))
+        else:
+            self.lbl_header_title.configure(text=self.tr("header_settings_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_settings_subtitle"))
+
+        # 3. Settings View
+        if hasattr(self, "lbl_theme_title"):
+            self.lbl_theme_title.configure(text=self.tr("card_theme_title"))
+            self.lbl_theme_sub.configure(text=self.tr("card_theme_sub"))
+            if "system" in self.theme_buttons:
+                self.theme_buttons["system"].configure(text=self.tr("theme_system"))
+            if "light" in self.theme_buttons:
+                self.theme_buttons["light"].configure(text=self.tr("theme_light"))
+            if "dark" in self.theme_buttons:
+                self.theme_buttons["dark"].configure(text=self.tr("theme_dark"))
+
+        if hasattr(self, "lbl_lang_title"):
+            self.lbl_lang_title.configure(text=self.tr("card_lang_title"))
+            self.lbl_lang_sub.configure(text=self.tr("card_lang_sub"))
+            if hasattr(self, "lbl_lang_select"):
+                self.lbl_lang_select.configure(text=self.tr("lbl_select_language"))
+            if hasattr(self, "lang_menu"):
+                self.lang_menu.set("🇬🇧 English" if self.current_language == "en" else "🇨🇿 Čeština")
+
+        if hasattr(self, "lbl_export_title"):
+            self.lbl_export_title.configure(text=self.tr("card_export_title"))
+            self.lbl_export_sub.configure(text=self.tr("card_export_sub"))
+            self.lbl_def_folder_title.configure(text=self.tr("lbl_default_folder"))
+            if not self.default_export_dir or not Path(self.default_export_dir).is_dir():
+                self.lbl_def_folder_path.configure(text=self.tr("lbl_folder_beside"))
+            self.btn_change_default_export.configure(text=self.tr("btn_set_export_folder"))
+            self.btn_reset_default_export.configure(text=self.tr("btn_reset_export_folder"))
+            self.chk_auto_open_folder.configure(text=self.tr("chk_auto_open_folder"))
+
+        if hasattr(self, "lbl_cache_title"):
+            self.lbl_cache_title.configure(text=self.tr("card_cache_title"))
+            self.lbl_cache_sub.configure(text=self.tr("card_cache_sub"))
+            self.lbl_cache_heading.configure(text=self.tr("lbl_cache_heading"))
+            self.btn_clean_cache.configure(text=self.tr("btn_clear_cache"))
+            self._refresh_cache_display()
+
+        if hasattr(self, "lbl_comp_title"):
+            self.lbl_comp_title.configure(text=self.tr("card_comp_title"))
+            self.btn_recheck.configure(text=self.tr("btn_recheck"))
+            self._render_components_static()
+
+        if hasattr(self, "lbl_ver_title"):
+            self.lbl_ver_title.configure(text=self.tr("card_ver_title"))
+            self.btn_update.configure(text=self.tr("btn_check_updates"))
+            self.lbl_installed_ver.configure(text=self.tr("installed_ver"))
+
+        # 4. PeciCut View
+        if hasattr(self, "lbl_sec_file"):
+            self.lbl_sec_file.configure(text=self.tr("sec_file_title"))
+        if hasattr(self, "btn_select_file"):
+            self.btn_select_file.configure(text=self.tr("btn_select_file"))
+        if hasattr(self, "lbl_file_path") and not self.current_video_path:
+            self.lbl_file_path.configure(text=self.tr("no_file_selected"))
+        if hasattr(self, "lbl_meta_info") and not self.video_metadata:
+            self.lbl_meta_info.configure(text=self.tr("meta_info_placeholder"))
+
+        if hasattr(self, "lbl_sec_audio"):
+            self.lbl_sec_audio.configure(text=self.tr("sec_audio_title"))
+            self.lbl_sec_audio_sub.configure(text=self.tr("sec_audio_sub"))
+
+        if hasattr(self, "lbl_sec_params"):
+            self.lbl_sec_params.configure(text=self.tr("sec_params_title"))
+        if hasattr(self, "lbl_dur_heading"):
+            self.lbl_dur_heading.configure(text=self.tr("lbl_target_dur_title"))
+        if hasattr(self, "lbl_thresh_heading"):
+            self.lbl_thresh_heading.configure(text=self.tr("lbl_threshold"))
+        if hasattr(self, "lbl_pad_before_heading"):
+            self.lbl_pad_before_heading.configure(text=self.tr("lbl_pad_before"))
+        if hasattr(self, "lbl_pad_after_heading"):
+            self.lbl_pad_after_heading.configure(text=self.tr("lbl_pad_after"))
+        if hasattr(self, "lbl_gap_heading"):
+            self.lbl_gap_heading.configure(text=self.tr("lbl_gap"))
+        if hasattr(self, "chk_facecam_ai"):
+            self.chk_facecam_ai.configure(text=self.tr("chk_facecam"))
+            self.sub_facecam.configure(text=self.tr("sub_facecam"))
+
+        if hasattr(self, "lbl_sec_export"):
+            self.lbl_sec_export.configure(text=self.tr("sec_export_title"))
+            self.btn_change_out.configure(text=self.tr("btn_change_out"))
+            if not self.output_directory or (self.current_video_path and self.output_directory == self.current_video_path.parent):
+                self.lbl_output_dir.configure(text=self.tr("out_dir_default"))
+
+        if hasattr(self, "btn_process"):
+            self.btn_process.configure(text=self.tr("btn_process"))
+            self.btn_cancel.configure(text=self.tr("btn_cancel"))
+            self.btn_open_folder.configure(text=self.tr("btn_open_folder"))
+            self.lbl_result_check.configure(text=self.tr("lbl_done"))
+            if not self.is_processing and not self.current_video_path:
+                self.lbl_status.configure(text=self.tr("status_ready"))
 
     def _render_components_static(self):
         """Renders component rows statically in their current state without running animation/spinner."""
@@ -829,13 +1614,13 @@ class AutoClipApp(ctk.CTk):
         info0 = ctk.CTkFrame(row0, fg_color="transparent")
         info0.pack(side="left", fill="x", expand=True, padx=12, pady=8)
         if ffmpeg_ok:
-            ctk.CTkLabel(info0, text="✓ FFmpeg & FFprobe: Připraveno", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
-            ctk.CTkLabel(info0, text=f"Nalezeno v systému: {ffmpeg_path.name if ffmpeg_path else ''}", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+            ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_desc_ok", name=ffmpeg_path.name if ffmpeg_path else ''), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
         else:
-            ctk.CTkLabel(info0, text="❌ FFmpeg & FFprobe: Chybí", font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
-            ctk.CTkLabel(info0, text="Potřebné pro analýzu audia a střih videa", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_fail"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
+            ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
             ctk.CTkButton(
-                row0, text="⬇️ Stáhnout FFmpeg",
+                row0, text="⬇️ " + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
                 width=135, height=26,
                 font=ctk.CTkFont(size=11, weight="bold"),
                 fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -854,13 +1639,13 @@ class AutoClipApp(ctk.CTk):
         info1 = ctk.CTkFrame(row1, fg_color="transparent")
         info1.pack(side="left", fill="x", expand=True, padx=12, pady=8)
         if models_ok:
-            ctk.CTkLabel(info1, text="✓ Facecam AI modely: Připraveno (3/3)", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
-            ctk.CTkLabel(info1, text="YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkLabel(info1, text=self.tr("comp_models_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+            ctk.CTkLabel(info1, text=self.tr("comp_models_desc_ok"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
         else:
-            ctk.CTkLabel(info1, text=f"❌ Facecam AI modely: Nalezeno {cnt}/3", font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
-            ctk.CTkLabel(info1, text="Modely chybí pro analýzu webkamery", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkLabel(info1, text=self.tr("comp_models_fail", cnt=cnt), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
+            ctk.CTkLabel(info1, text=self.tr("comp_models_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
             ctk.CTkButton(
-                row1, text="⬇️ Stáhnout modely",
+                row1, text="⬇️ " + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
                 width=135, height=26,
                 font=ctk.CTkFont(size=11, weight="bold"),
                 fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -872,8 +1657,8 @@ class AutoClipApp(ctk.CTk):
         row2.pack(fill="x", pady=4)
         info2 = ctk.CTkFrame(row2, fg_color="transparent")
         info2.pack(side="left", fill="x", expand=True, padx=12, pady=8)
-        ctk.CTkLabel(info2, text="✓ Pracovní adresáře aplikace: V pořádku", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
-        ctk.CTkLabel(info2, text="models/, assets/, bin/ jsou připraveny k použití", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+        ctk.CTkLabel(info2, text=self.tr("comp_dirs_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+        ctk.CTkLabel(info2, text=self.tr("comp_dirs_desc"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
 
     def _switch_view(self, view_name: str):
         """Switches the active view in Pecislav Studio between PeciCut and Nastavení."""
@@ -891,10 +1676,8 @@ class AutoClipApp(ctk.CTk):
                 text_color=TEXT_TITLE,
                 hover_color=("#D1D5DB", "#20222B")
             )
-            self.lbl_header_title.configure(text="🎬 PeciCut")
-            self.lbl_header_subtitle.configure(
-                text="Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu"
-            )
+            self.lbl_header_title.configure(text=self.tr("header_pecicut_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_pecicut_subtitle"))
         elif view_name == "settings":
             self.page_pecicut.pack_forget()
             self.page_settings.pack(fill="both", expand=True, padx=20, pady=12)
@@ -908,10 +1691,9 @@ class AutoClipApp(ctk.CTk):
                 text_color=TEXT_TITLE,
                 hover_color=("#D1D5DB", "#20222B")
             )
-            self.lbl_header_title.configure(text="⚙️ Nastavení Studia")
-            self.lbl_header_subtitle.configure(
-                text="Barevný motiv, kontrola stažených součástí a aktualizace Pecislav Studio"
-            )
+            self.lbl_header_title.configure(text=self.tr("header_settings_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_settings_subtitle"))
+            self._refresh_cache_display()
 
     def _on_theme_select(self, mode_key: str):
         if mode_key == "light":
@@ -920,6 +1702,8 @@ class AutoClipApp(ctk.CTk):
             ctk.set_appearance_mode("Dark")
         else:
             ctk.set_appearance_mode("System")
+        self.config["theme"] = mode_key
+        save_app_config(self.config)
         self._highlight_selected_theme(mode_key)
 
     def _highlight_selected_theme(self, active_mode: str):
@@ -958,8 +1742,8 @@ class AutoClipApp(ctk.CTk):
         loading_bg = ("#E5E7EB", "#1C1E27")
         comps = [
             "FFmpeg & FFprobe",
-            "Facecam AI modely",
-            "Pracovní adresáře aplikace",
+            "Facecam AI modely" if self.current_language == "cs" else "Facecam AI models",
+            "Pracovní adresáře aplikace" if self.current_language == "cs" else "App working directories",
         ]
         row_refs = []
         for name in comps:
@@ -980,7 +1764,7 @@ class AutoClipApp(ctk.CTk):
             t_lbl.pack(anchor="w")
             s_lbl = ctk.CTkLabel(
                 info,
-                text="Kontroluji...",
+                text="Kontroluji..." if self.current_language == "cs" else "Checking...",
                 font=ctk.CTkFont(size=11),
                 text_color=TEXT_MUTED
             )
@@ -1038,13 +1822,13 @@ class AutoClipApp(ctk.CTk):
             row, t_lbl, s_lbl = row_refs[0]
             row.configure(fg_color=BG_CARD_INNER)
             if ffmpeg_ok:
-                t_lbl.configure(text="✓ FFmpeg & FFprobe: Připraveno", text_color="#22C55E")
-                s_lbl.configure(text=f"Nalezeno v systému: {fp.name if fp else ''}", text_color=TEXT_BODY)
+                t_lbl.configure(text=self.tr("comp_ffmpeg_ok"), text_color="#22C55E")
+                s_lbl.configure(text=self.tr("comp_ffmpeg_desc_ok", name=fp.name if fp else ''), text_color=TEXT_BODY)
             else:
-                t_lbl.configure(text="❌ FFmpeg & FFprobe: Chybí", text_color="#EF4444")
-                s_lbl.configure(text="Potřebné pro analýzu audia a střih videa", text_color=TEXT_BODY)
+                t_lbl.configure(text=self.tr("comp_ffmpeg_fail"), text_color="#EF4444")
+                s_lbl.configure(text=self.tr("comp_ffmpeg_desc_fail"), text_color=TEXT_BODY)
                 ctk.CTkButton(
-                    row, text="⬇️ Stáhnout FFmpeg",
+                    row, text="⬇️ " + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
                     width=135, height=26,
                     font=ctk.CTkFont(size=11, weight="bold"),
                     fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1056,13 +1840,13 @@ class AutoClipApp(ctk.CTk):
             row, t_lbl, s_lbl = row_refs[1]
             row.configure(fg_color=BG_CARD_INNER)
             if models_ok:
-                t_lbl.configure(text="✓ Facecam AI modely: Připraveno (3/3)", text_color="#22C55E")
-                s_lbl.configure(text="YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí", text_color=TEXT_BODY)
+                t_lbl.configure(text=self.tr("comp_models_ok"), text_color="#22C55E")
+                s_lbl.configure(text=self.tr("comp_models_desc_ok"), text_color=TEXT_BODY)
             else:
-                t_lbl.configure(text=f"❌ Facecam AI modely: Nalezeno {models_cnt}/3", text_color="#EF4444")
-                s_lbl.configure(text="Modely chybí pro analýzu webkamery", text_color=TEXT_BODY)
+                t_lbl.configure(text=self.tr("comp_models_fail", cnt=models_cnt), text_color="#EF4444")
+                s_lbl.configure(text=self.tr("comp_models_desc_fail"), text_color=TEXT_BODY)
                 ctk.CTkButton(
-                    row, text="⬇️ Stáhnout modely",
+                    row, text="⬇️ " + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
                     width=135, height=26,
                     font=ctk.CTkFont(size=11, weight="bold"),
                     fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1072,8 +1856,8 @@ class AutoClipApp(ctk.CTk):
             # --- Row 2: Pracovní adresáře ---
             row, t_lbl, s_lbl = row_refs[2]
             row.configure(fg_color=BG_CARD_INNER)
-            t_lbl.configure(text="✓ Pracovní adresáře aplikace: V pořádku", text_color="#22C55E")
-            s_lbl.configure(text="models/, assets/, bin/ jsou připraveny k použití", text_color=TEXT_BODY)
+            t_lbl.configure(text=self.tr("comp_dirs_ok"), text_color="#22C55E")
+            s_lbl.configure(text=self.tr("comp_dirs_desc"), text_color=TEXT_BODY)
 
         self.after(80, finalize)
 
@@ -1163,13 +1947,13 @@ class AutoClipApp(ctk.CTk):
         hdr = ctk.CTkFrame(box, fg_color="transparent")
         hdr.pack(fill="x", padx=16, pady=(12, 4))
 
-        lbl = ctk.CTkLabel(
+        self.lbl_sec_file = ctk.CTkLabel(
             hdr,
-            text="1. Výběr zdrojového video záznamu",
+            text=self.tr("sec_file_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
         )
-        lbl.pack(side="left")
+        self.lbl_sec_file.pack(side="left")
 
         q_btn = self._create_help_btn(
             hdr,
@@ -1187,7 +1971,7 @@ class AutoClipApp(ctk.CTk):
 
         self.btn_select_file = ctk.CTkButton(
             row,
-            text="📁 Procházet soubory...",
+            text=self.tr("btn_select_file"),
             command=self._on_select_file,
             width=180,
             height=36,
@@ -1202,7 +1986,7 @@ class AutoClipApp(ctk.CTk):
 
         self.lbl_file_path = ctk.CTkLabel(
             row,
-            text="Zatím nebyl vybrán žádný soubor (.mp4, .mkv, .mov)",
+            text=self.tr("no_file_selected"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY,
             anchor="w"
@@ -1215,7 +1999,7 @@ class AutoClipApp(ctk.CTk):
 
         self.lbl_meta_info = ctk.CTkLabel(
             self.meta_card,
-            text="ℹ️ Po výběru souboru se zde zobrazí délka, FPS, rozlišení a nalezené audio stopy.",
+            text=self.tr("meta_info_placeholder"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY,
             anchor="w"
@@ -1230,13 +2014,13 @@ class AutoClipApp(ctk.CTk):
         hdr = ctk.CTkFrame(box, fg_color="transparent")
         hdr.pack(fill="x", padx=16, pady=(12, 4))
 
-        lbl = ctk.CTkLabel(
+        self.lbl_sec_audio = ctk.CTkLabel(
             hdr,
-            text="2. Výběr audio stopy pro analýzu (Mikrofon / Hlas)",
+            text=self.tr("sec_audio_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
         )
-        lbl.pack(side="left")
+        self.lbl_sec_audio.pack(side="left")
 
         q_btn = self._create_help_btn(
             hdr,
@@ -1250,13 +2034,13 @@ class AutoClipApp(ctk.CTk):
         )
         q_btn.pack(side="left", padx=(8, 0))
 
-        sub = ctk.CTkLabel(
+        self.lbl_sec_audio_sub = ctk.CTkLabel(
             box,
-            text="Vyberte stopu s vaším hlasem, aby se detekoval váš křik a reakce namísto zvuků ze hry.",
+            text=self.tr("sec_audio_sub"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY
         )
-        sub.pack(anchor="w", padx=16, pady=(0, 8))
+        self.lbl_sec_audio_sub.pack(anchor="w", padx=16, pady=(0, 8))
 
         self.audio_track_var = ctk.StringVar(value="Stopa 1 (výchozí)")
         self.audio_dropdown = ctk.CTkOptionMenu(
@@ -1285,13 +2069,13 @@ class AutoClipApp(ctk.CTk):
         hdr = ctk.CTkFrame(box, fg_color="transparent")
         hdr.pack(fill="x", padx=16, pady=(12, 4))
 
-        lbl = ctk.CTkLabel(
+        self.lbl_sec_params = ctk.CTkLabel(
             hdr,
-            text="3. Režim detekce a parametry střihu",
+            text=self.tr("sec_params_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
         )
-        lbl.pack(side="left")
+        self.lbl_sec_params.pack(side="left")
 
         q_btn = self._create_help_btn(
             hdr,
@@ -1332,12 +2116,13 @@ class AutoClipApp(ctk.CTk):
         dur_hdr = ctk.CTkFrame(box, fg_color="transparent")
         dur_hdr.pack(fill="x", padx=16, pady=(6, 2))
 
-        ctk.CTkLabel(
+        self.lbl_dur_heading = ctk.CTkLabel(
             dur_hdr,
-            text="Cílová maximální délka sestřihu:",
+            text=self.tr("lbl_target_dur_title"),
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(side="left")
+        )
+        self.lbl_dur_heading.pack(side="left")
 
         q_dur = self._create_help_btn(
             dur_hdr,
@@ -1380,12 +2165,13 @@ class AutoClipApp(ctk.CTk):
         s1_frame = ctk.CTkFrame(box, fg_color="transparent")
         s1_frame.pack(fill="x", padx=16, pady=4)
 
-        ctk.CTkLabel(
+        self.lbl_thresh_heading = ctk.CTkLabel(
             s1_frame,
-            text="Práh hlasitosti / řevu (dBFS):",
+            text=self.tr("lbl_threshold"),
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(side="left")
+        )
+        self.lbl_thresh_heading.pack(side="left")
 
         self.q_thresh = self._create_help_btn(
             s1_frame,
@@ -1433,7 +2219,8 @@ class AutoClipApp(ctk.CTk):
 
         p_before_hdr = ctk.CTkFrame(pad_left, fg_color="transparent")
         p_before_hdr.pack(fill="x")
-        ctk.CTkLabel(p_before_hdr, text="Kontext před peakem:", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE).pack(side="left")
+        self.lbl_pad_before_heading = ctk.CTkLabel(p_before_hdr, text=self.tr("lbl_pad_before"), font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE)
+        self.lbl_pad_before_heading.pack(side="left")
         q_p_bef = self._create_help_btn(
             p_before_hdr,
             text=(
@@ -1468,7 +2255,8 @@ class AutoClipApp(ctk.CTk):
 
         p_after_hdr = ctk.CTkFrame(pad_right, fg_color="transparent")
         p_after_hdr.pack(fill="x")
-        ctk.CTkLabel(p_after_hdr, text="Kontext po peaku:", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE).pack(side="left")
+        self.lbl_pad_after_heading = ctk.CTkLabel(p_after_hdr, text=self.tr("lbl_pad_after"), font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE)
+        self.lbl_pad_after_heading.pack(side="left")
         q_p_aft = self._create_help_btn(
             p_after_hdr,
             text=(
@@ -1503,12 +2291,13 @@ class AutoClipApp(ctk.CTk):
 
         gap_hdr = ctk.CTkFrame(gap_frame, fg_color="transparent")
         gap_hdr.pack(fill="x")
-        ctk.CTkLabel(
+        self.lbl_gap_heading = ctk.CTkLabel(
             gap_hdr,
-            text="Inteligentní sloučení (spojit momenty s mezerou menší než):",
+            text=self.tr("lbl_gap"),
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(side="left")
+        )
+        self.lbl_gap_heading.pack(side="left")
 
         q_gap = self._create_help_btn(
             gap_frame,
@@ -1549,7 +2338,7 @@ class AutoClipApp(ctk.CTk):
         self.facecam_ai_var = ctk.BooleanVar(value=True)
         self.chk_facecam_ai = ctk.CTkCheckBox(
             f_hdr,
-            text="🤖 Facecam AI (Analýza výrazu obličeje a smíchu z webkamery)",
+            text=self.tr("chk_facecam"),
             variable=self.facecam_ai_var,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=ORANGE_PRIMARY,
@@ -1574,13 +2363,13 @@ class AutoClipApp(ctk.CTk):
         )
         q_ai.pack(side="left", padx=(8, 0))
 
-        sub_ai = ctk.CTkLabel(
+        self.sub_facecam = ctk.CTkLabel(
             facecam_box,
-            text="Kombinuje audio analýzu s počítačovým viděním — prioritizuje nejlepší reakce obličeje, smích a leknutí.",
+            text=self.tr("sub_facecam"),
             font=ctk.CTkFont(size=11),
             text_color=TEXT_BODY
         )
-        sub_ai.pack(anchor="w", padx=12, pady=(0, 10))
+        self.sub_facecam.pack(anchor="w", padx=12, pady=(0, 10))
 
     def _build_export_section(self, parent):
         """4. Single-choice output format (Dropdown) and destination directory."""
@@ -1590,13 +2379,13 @@ class AutoClipApp(ctk.CTk):
         hdr = ctk.CTkFrame(box, fg_color="transparent")
         hdr.pack(fill="x", padx=16, pady=(12, 4))
 
-        lbl = ctk.CTkLabel(
+        self.lbl_sec_export = ctk.CTkLabel(
             hdr,
-            text="4. Formát výstupu a cílová složka",
+            text=self.tr("sec_export_title"),
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_TITLE
         )
-        lbl.pack(side="left")
+        self.lbl_sec_export.pack(side="left")
 
         q_fmt = self._create_help_btn(
             hdr,
@@ -1638,7 +2427,7 @@ class AutoClipApp(ctk.CTk):
 
         self.btn_change_out = ctk.CTkButton(
             out_row,
-            text="Změnit výstupní složku...",
+            text=self.tr("btn_change_out"),
             command=self._on_select_output_dir,
             width=180,
             height=32,
@@ -1650,11 +2439,16 @@ class AutoClipApp(ctk.CTk):
         )
         self.btn_change_out.pack(side="left")
 
+        init_out_text = (
+            f"{self.tr('out_dir_custom')}{self.default_export_dir}"
+            if self.default_export_dir and Path(self.default_export_dir).is_dir()
+            else self.tr("out_dir_default")
+        )
         self.lbl_output_dir = ctk.CTkLabel(
             out_row,
-            text="Výstup: Automaticky ve složce se zdrojovým videem",
+            text=init_out_text,
             font=ctk.CTkFont(size=12),
-            text_color=TEXT_BODY,
+            text_color=TEXT_TITLE if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else TEXT_BODY,
             anchor="w"
         )
         self.lbl_output_dir.pack(side="left", fill="x", expand=True, padx=12)
@@ -1670,7 +2464,7 @@ class AutoClipApp(ctk.CTk):
 
         self.btn_process = ctk.CTkButton(
             btn_row,
-            text="🚀 Spustit zpracování záznamu",
+            text=self.tr("btn_process"),
             command=self._on_start_processing,
             height=46,
             font=ctk.CTkFont(size=15, weight="bold"),
@@ -1682,7 +2476,7 @@ class AutoClipApp(ctk.CTk):
 
         self.btn_cancel = ctk.CTkButton(
             btn_row,
-            text="Zrušit",
+            text=self.tr("btn_cancel"),
             command=self._on_cancel_processing,
             height=46,
             width=110,
@@ -1704,7 +2498,7 @@ class AutoClipApp(ctk.CTk):
         # Status text
         self.lbl_status = ctk.CTkLabel(
             box,
-            text="Připraven k výběru videa.",
+            text=self.tr("status_ready"),
             font=ctk.CTkFont(size=13),
             text_color=TEXT_TITLE
         )
@@ -1715,7 +2509,7 @@ class AutoClipApp(ctk.CTk):
 
         self.btn_open_folder = ctk.CTkButton(
             self.result_card,
-            text="📂 Otevřít složku s výsledkem",
+            text=self.tr("btn_open_folder"),
             command=self._on_open_result_folder,
             height=32,
             font=ctk.CTkFont(size=13, weight="bold"),
@@ -1728,7 +2522,7 @@ class AutoClipApp(ctk.CTk):
 
         self.lbl_result_check = ctk.CTkLabel(
             self.result_card,
-            text="✓ Hotovo!",
+            text=self.tr("lbl_done"),
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#22C55E"
         )
@@ -1873,6 +2667,21 @@ class AutoClipApp(ctk.CTk):
         video_path = Path(chosen)
         self.current_video_path = video_path
         self.lbl_file_path.configure(text=video_path.name, text_color=TEXT_TITLE)
+
+        # Apply default export directory if set in config, otherwise default beside video
+        if self.default_export_dir and Path(self.default_export_dir).is_dir():
+            self.output_directory = Path(self.default_export_dir)
+            self.lbl_output_dir.configure(
+                text=f"{self.tr('out_dir_custom')}{self.default_export_dir}",
+                text_color=TEXT_TITLE
+            )
+        else:
+            self.output_directory = None
+            self.lbl_output_dir.configure(
+                text=self.tr("out_dir_default"),
+                text_color=TEXT_BODY
+            )
+
         # Reset results
         self.result_card.pack_forget()
         self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
@@ -1917,15 +2726,15 @@ class AutoClipApp(ctk.CTk):
             self.audio_dropdown.configure(values=["Žádné audio stopy nenalezeny"])
             self.audio_track_var.set("Žádné audio stopy")
 
-        self.lbl_status.configure(text="Video připraveno. Nastavte parametry a klikněte na 'Spustit zpracování'.")
+        self.lbl_status.configure(text=self.tr("status_ready"))
 
     def _on_select_output_dir(self):
         """Allows user to select custom destination folder."""
-        folder = filedialog.askdirectory(title="Vyberte cílovou složku")
+        folder = filedialog.askdirectory(title=self.tr("sec_export_title"))
         if folder:
             self.output_directory = Path(folder)
             self.lbl_output_dir.configure(
-                text=f"Výstup: {self.output_directory}",
+                text=f"{self.tr('out_dir_custom')}{self.output_directory}",
                 text_color=TEXT_TITLE
             )
 
@@ -2054,6 +2863,7 @@ class AutoClipApp(ctk.CTk):
 
             total_duration = meta.get("duration", 0.0)
             fps = meta.get("fps", 30.0)
+            threads = self._get_configured_threads()
 
             # 2. Audio Analysis (FFmpeg streaming + NumPy RMS)
             self._update_progress(0.08, "Zahajuji analýzu hlasitosti audia...")
@@ -2070,6 +2880,7 @@ class AutoClipApp(ctk.CTk):
                 mode=mode,
                 padding_before=pad_before,
                 padding_after=pad_after,
+                threads=threads,
                 progress_callback=analysis_cb,
                 cancel_event=self.cancel_event
             )
@@ -2107,6 +2918,7 @@ class AutoClipApp(ctk.CTk):
                         video_path=video_path,
                         candidate_segments=merged_segments,
                         sample_fps=2.0,
+                        threads=threads,
                         progress_callback=ai_progress,
                         cancel_event=self.cancel_event
                     )
@@ -2165,6 +2977,7 @@ class AutoClipApp(ctk.CTk):
                     input_video_path=video_path,
                     segments=merged_segments,
                     output_video_path=out_video_path,
+                    threads=threads,
                     progress_callback=cut_cb,
                     cancel_event=self.cancel_event
                 )
@@ -2220,6 +3033,9 @@ class AutoClipApp(ctk.CTk):
                 self.progress_bar.set(1.0)
                 self.lbl_status.pack_forget()
                 self.result_card.pack(anchor="w", padx=16, pady=(2, 12))
+                if getattr(self, "auto_open_folder", True):
+                    self.after(600, self._on_open_result_folder)
+                self._refresh_cache_display()
 
         self.after(0, restore)
 

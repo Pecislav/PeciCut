@@ -328,7 +328,8 @@ def analyze_candidate_facecam_segments(
     candidate_segments: List[Tuple],
     sample_fps: float = 2.0,
     progress_callback: Optional[Callable[[float, str], None]] = None,
-    cancel_event: Optional[Any] = None
+    cancel_event: Optional[Any] = None,
+    threads: int = 0,
 ) -> List[Tuple]:
     """
     Pass 2 of the AI Highlight Pipeline:
@@ -341,10 +342,17 @@ def analyze_candidate_facecam_segments(
         sample_fps: Frame sampling frequency per second of candidate segment (default 2.0 fps).
         progress_callback: Progress callback (percent 0-100, status text).
         cancel_event: Optional threading.Event to abort early.
+        threads: Thread count for computer vision processing (0 = default/all).
 
     Returns:
         List of enriched segments: (start_sec, end_sec, peak_dbfs, face_score, composite_score)
     """
+    if threads > 0:
+        try:
+            cv2.setNumThreads(threads)
+        except Exception:
+            pass
+
     if not candidate_segments:
         return []
 

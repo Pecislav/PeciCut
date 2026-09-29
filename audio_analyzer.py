@@ -164,6 +164,7 @@ def analyze_audio_stream(
     window_sec: float = 0.1,   # 100ms analysis window
     progress_callback: Optional[Callable[[float, str], None]] = None,
     cancel_event: Optional[threading.Event] = None,
+    threads: int = 0,
 ) -> Optional[List[Tuple[float, float]]]:
     """
     Streams audio from a specific track using FFmpeg as 16kHz 16-bit mono PCM.
@@ -181,6 +182,7 @@ def analyze_audio_stream(
         window_sec: Length of analysis window in seconds (default 0.1s = 100ms).
         progress_callback: Function accepting (percentage [0.0 - 1.0], message [str]).
         cancel_event: threading.Event to signal cancellation.
+        threads: Number of CPU threads for FFmpeg (0 = automatic/all cores).
 
     Returns:
         List of (start_sec, end_sec) tuples or None if cancelled.
@@ -199,13 +201,17 @@ def analyze_audio_stream(
     cmd = [
         str(ffmpeg),
         "-v", "error",
+    ]
+    if threads > 0:
+        cmd.extend(["-threads", str(threads)])
+    cmd.extend([
         "-i", str(video_path),
         "-map", f"0:a:{track_index}",
         "-ac", "1",
         "-ar", str(sample_rate),
         "-f", "s16le",
         "-"
-    ]
+    ])
 
     startupinfo = None
     if platform.system().lower() == "windows":

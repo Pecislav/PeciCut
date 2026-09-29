@@ -168,7 +168,8 @@ def cut_video_lossless(
     segments: List[Tuple],
     output_video_path: Path | str,
     progress_callback: Optional[Callable[[float, str], None]] = None,
-    cancel_event: Optional[threading.Event] = None
+    cancel_event: Optional[threading.Event] = None,
+    threads: int = 0,
 ) -> Optional[Path]:
     """
     Losslessly cuts and concatenates video segments using FFmpeg concat demuxer.
@@ -180,6 +181,7 @@ def cut_video_lossless(
         output_video_path: Final destination for the merged video file.
         progress_callback: Callback reporting (percentage [0.0 - 1.0], message [str]).
         cancel_event: Threading event to support immediate cancellation.
+        threads: Number of CPU threads for FFmpeg (0 = automatic/all cores).
 
     Returns:
         Path to output file if successful, or None if cancelled or empty.
@@ -224,6 +226,10 @@ def cut_video_lossless(
             cut_cmd = [
                 str(ffmpeg),
                 "-y",
+            ]
+            if threads > 0:
+                cut_cmd.extend(["-threads", str(threads)])
+            cut_cmd.extend([
                 "-ss", f"{start_sec:.3f}",
                 "-i", str(input_path),
                 "-t", f"{duration:.3f}",
@@ -231,7 +237,7 @@ def cut_video_lossless(
                 "-map", "0",
                 "-avoid_negative_ts", "make_zero",
                 str(chunk_path)
-            ]
+            ])
 
             process = subprocess.Popen(
                 cut_cmd,
@@ -252,6 +258,10 @@ def cut_video_lossless(
                 fallback_cmd = [
                     str(ffmpeg),
                     "-y",
+                ]
+                if threads > 0:
+                    fallback_cmd.extend(["-threads", str(threads)])
+                fallback_cmd.extend([
                     "-ss", f"{start_sec:.3f}",
                     "-i", str(input_path),
                     "-t", f"{duration:.3f}",
@@ -259,7 +269,7 @@ def cut_video_lossless(
                     "-c:a", "copy",
                     "-avoid_negative_ts", "make_zero",
                     str(chunk_path)
-                ]
+                ])
                 fb_process = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
                 if fb_process.returncode != 0:
                     raise RuntimeError(f"Chyba při bezztrátovém střihu segmentu {idx}/{total_segments}:\n{stderr_text}")
@@ -286,13 +296,17 @@ def cut_video_lossless(
         concat_cmd = [
             str(ffmpeg),
             "-y",
+        ]
+        if threads > 0:
+            concat_cmd.extend(["-threads", str(threads)])
+        concat_cmd.extend([
             "-f", "concat",
             "-safe", "0",
             "-i", str(concat_list_file.name),
             "-c", "copy",
             "-movflags", "+faststart",
             str(output_path.resolve())
-        ]
+        ])
 
         concat_process = subprocess.Popen(
             concat_cmd,
