@@ -21,8 +21,9 @@ import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog, messagebox
+import customtkinter as ctk
 
 from ffmpeg_utils import (
     download_ffmpeg_auto,
@@ -68,8 +69,196 @@ TEXT_REC = "#E08A3C"           # Teplá oranžovo-zlatá pro doporučení
 TRACK_COLOR = "#242630"        # Pozadí dráhy sliderů a progress baru
 BORDER_SUBTLE = "#363947"      # Ohraničení tlačítek a přepínačů
 
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+# -----------------------------------------------------------------------------
+# Floating Modern Tooltip (Hover Overlay - Zero Layout Shift)
+# -----------------------------------------------------------------------------
+
+class ModernTooltip:
+    """
+    Floating overlay tooltip that appears next to a widget on hover without shifting layout.
+    Overlays gracefully above surrounding content with soft/semi-translucent typography
+    and a distinct highlighted recommendation badge.
+    """
+    active_tooltip: Optional['ModernTooltip'] = None
+
+    def __init__(self, widget, text: str, recommendation: Optional[str] = None, max_width: int = 400):
+        self.widget = widget
+        self.text = text.strip()
+        self.recommendation = recommendation.strip() if recommendation else None
+        self.max_width = max_width
+        self.tip_window: Optional[tk.Toplevel] = None
+        self.after_id = None
+        self.hide_after_id = None
+
+        targets = [self.widget]
+        try:
+            targets.extend(self.widget.winfo_children())
+        except Exception:
+            pass
+        if hasattr(self.widget, "_canvas") and self.widget._canvas not in targets:
+            targets.append(self.widget._canvas)
+        if hasattr(self.widget, "_text_label") and self.widget._text_label not in targets:
+            targets.append(self.widget._text_label)
+
+        for w in targets:
+            w.bind("<Enter>", self.on_enter, add=True)
+            w.bind("<Leave>", self.on_leave, add=True)
+            w.bind("<Button-1>", self.on_click, add=True)
+
+    def set_recommendation(self, recommendation: Optional[str]):
+        """Dynamically update recommendation text (e.g. when changing mode)."""
+        self.recommendation = recommendation.strip() if recommendation else None
+
+    def on_enter(self, event=None):
+        if ModernTooltip.active_tooltip and ModernTooltip.active_tooltip != self:
+            ModernTooltip.active_tooltip.hide()
+        self.cancel_schedule()
+        self.after_id = self.widget.after(80, self.show)
+
+    def on_leave(self, event=None):
+        self.cancel_schedule()
+        self.hide_after_id = self.widget.after(150, self.hide)
+
+    def on_click(self, event=None):
+        self.cancel_schedule()
+        self.hide()
+
+    def cancel_schedule(self):
+        if self.after_id:
+            try:
+                self.widget.after_cancel(self.after_id)
+            except Exception:
+                pass
+            self.after_id = None
+        if self.hide_after_id:
+            try:
+                self.widget.after_cancel(self.hide_after_id)
+            except Exception:
+                pass
+            self.hide_after_id = None
+
+    def show(self):
+        if self.tip_window or not self.widget.winfo_exists():
+            return
+
+        ModernTooltip.active_tooltip = self
+
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        try:
+            tw.attributes("-topmost", True)
+            tw.attributes("-alpha", 0.95)
+        except Exception:
+            pass
+
+        # Subtle dark matte frame with creator orange accent border
+        frame = tk.Frame(
+            tw,
+            bg="#13141B",
+            highlightthickness=1,
+            highlightbackground="#FF6D00",
+            padx=12,
+            pady=10
+        )
+        frame.pack()
+
+        font_family = "Segoe UI" if tk.TkVersion >= 8.6 and sys.platform.startswith("win") else "Helvetica"
+
+        # Main explanation text (soft, slightly translucent/muted typography)
+        lbl = tk.Label(
+            frame,
+            text=self.text,
+            justify="left",
+            font=(font_family, 11),
+            fg="#C2C7D0",
+            bg="#13141B",
+            wraplength=self.max_width
+        )
+        lbl.pack(anchor="w")
+
+        hover_targets = [tw, frame, lbl]
+
+        # Recommendation section (if present): Distinct warm amber shade + bold typography
+        if self.recommendation:
+            # Elegant thin separator
+            sep = tk.Frame(frame, height=1, bg="#262936")
+            sep.pack(fill="x", pady=(10, 8))
+
+            # Recommendation container with subtle dark-amber background
+            rec_box = tk.Frame(
+                frame,
+                bg="#231A13",
+                highlightthickness=1,
+                highlightbackground="#5C3414",
+                padx=10,
+                pady=7
+            )
+            rec_box.pack(fill="x", anchor="w")
+
+            rec_text = self.recommendation
+            if not rec_text.startswith("💡"):
+                rec_text = f"💡 Doporučení: {rec_text}"
+
+            rec_lbl = tk.Label(
+                rec_box,
+                text=rec_text,
+                justify="left",
+                font=(font_family, 10, "bold"),
+                fg="#FFA439",  # Teplá zářivá oranžovo-zlatá pro doporučení
+                bg="#231A13",
+                wraplength=self.max_width - 24
+            )
+            rec_lbl.pack(anchor="w")
+
+            hover_targets.extend([sep, rec_box, rec_lbl])
+
+        # Keep tooltip open if mouse moves over tooltip window or recommendation box
+        def keep_open(e):
+            self.cancel_schedule()
+
+        for widget_item in hover_targets:
+            widget_item.bind("<Enter>", keep_open, add=True)
+            widget_item.bind("<Leave>", self.on_leave, add=True)
+
+        tw.update_idletasks()
+        w_tip = tw.winfo_width()
+        h_tip = tw.winfo_height()
+        screen_w = tw.winfo_screenwidth()
+        screen_h = tw.winfo_screenheight()
+
+        root_x = self.widget.winfo_rootx()
+        root_y = self.widget.winfo_rooty()
+        btn_w = self.widget.winfo_width()
+
+        # Position floating cleanly next to the ? button
+        x = root_x + btn_w + 8
+        y = root_y - 4
+
+        # If it would overflow screen width on the right, place on left side
+        if x + w_tip > screen_w - 12:
+            x = max(8, root_x - w_tip - 8)
+
+        # If it overflows screen height, clamp safely
+        if y + h_tip > screen_h - 15:
+            y = max(8, screen_h - h_tip - 15)
+
+        tw.wm_geometry(f"+{x}+{y}")
+
+    def hide(self):
+        self.cancel_schedule()
+        if self.tip_window:
+            try:
+                self.tip_window.destroy()
+            except Exception:
+                pass
+            self.tip_window = None
+        if ModernTooltip.active_tooltip == self:
+            ModernTooltip.active_tooltip = None
+
+    @classmethod
+    def hide_all(cls):
+        if cls.active_tooltip:
+            cls.active_tooltip.hide()
 
 
 class AutoClipApp(ctk.CTk):
@@ -93,10 +282,6 @@ class AutoClipApp(ctk.CTk):
         self.is_downloading_ffmpeg = False
         self.last_output_path: Optional[Path] = None
 
-        # Smooth scrolling state
-        self._scroll_accum: float = 0.0
-        self._scroll_after_id = None
-
         # Build UI
         self._build_header()
         self._build_footer()
@@ -106,46 +291,17 @@ class AutoClipApp(ctk.CTk):
         # Check FFmpeg availability at launch
         self._check_ffmpeg_status()
 
+
     # -------------------------------------------------------------------------
     # Helper: Interactive (?) Help Button Builder
     # -------------------------------------------------------------------------
 
-    def _create_help_btn(self, parent_row, target_container, text: str) -> ctk.CTkButton:
+    def _create_help_btn(self, parent_row, target_container=None, text: str = "", recommendation: Optional[str] = None) -> ctk.CTkButton:
         """
-        Creates an inline toggle button (?) that reveals or collapses a styled
-        in-place explanatory text banner directly within the interface (no annoying popups).
+        Creates a clean (?) hover button with a floating tooltip overlay.
+        The text floats cleanly next to the button on hover without shifting or jumping
+        any widgets below, with a distinct bold warm-tinted recommendation badge.
         """
-        help_box = ctk.CTkFrame(
-            target_container,
-            fg_color="#181A22",
-            border_width=1,
-            border_color=ORANGE_PRIMARY,
-            corner_radius=8
-        )
-        help_lbl = ctk.CTkLabel(
-            help_box,
-            text=f"ℹ️  {text}",
-            font=ctk.CTkFont(size=11),
-            text_color="#CBD1DC",
-            justify="left",
-            anchor="w",
-            wraplength=540
-        )
-        help_lbl.pack(fill="x", padx=12, pady=8)
-
-        is_open = [False]
-
-        def toggle_help():
-            if is_open[0]:
-                help_box.pack_forget()
-                btn.configure(fg_color="#262833", text_color="#B4B9C7")
-                is_open[0] = False
-            else:
-                pad_x = 16 if target_container != parent_row else 4
-                help_box.pack(fill="x", padx=pad_x, pady=(2, 8), after=parent_row)
-                btn.configure(fg_color=ORANGE_PRIMARY, text_color="#0D0E12")
-                is_open[0] = True
-
         btn = ctk.CTkButton(
             parent_row,
             text="?",
@@ -155,122 +311,73 @@ class AutoClipApp(ctk.CTk):
             font=ctk.CTkFont(size=11, weight="bold"),
             fg_color="#262833",
             hover_color=ORANGE_PRIMARY,
-            text_color="#B4B9C7",
-            command=toggle_help
+            text_color="#B4B9C7"
         )
+        tooltip = ModernTooltip(btn, text=text, recommendation=recommendation)
+        btn._tooltip = tooltip
         return btn
-
-    # -------------------------------------------------------------------------
-    # High-Performance Smooth Scroller Engine
-    # -------------------------------------------------------------------------
 
     def _setup_smooth_scrolling(self):
         """
-        Replaces default CustomTkinter mousewheel bindings with an optimized,
-        throttled 60 FPS scrolling engine with boundary collision guards.
-        Completely eliminates UI stuttering and event queue flooding, especially
-        near the bottom and top boundaries.
+        Configures high-performance, smooth 1:1 hardware scrolling for the scrollable frame
+        with collision guards on boundaries to completely prevent stuttering at the end.
         """
-        # Unbind default CustomTkinter global bindings
-        self.unbind_all("<MouseWheel>")
-        self.unbind_all("<Button-4>")
-        self.unbind_all("<Button-5>")
-
-        # Register optimized global scroll handlers
-        self.bind_all("<MouseWheel>", self._on_optimized_mousewheel)
-        self.bind_all("<Button-4>", self._on_optimized_mousewheel)
-        self.bind_all("<Button-5>", self._on_optimized_mousewheel)
-
-    def _on_optimized_mousewheel(self, event):
-        """
-        Processes mousewheel events with delta coalescing and boundary guards.
-        """
-        if not hasattr(self, "scroll_frame") or self.scroll_frame is None:
-            return "break"
-
         canvas = self.scroll_frame._parent_canvas
-        top, bottom = canvas.yview()
+        orig_yview = canvas.yview
 
-        # If entire content fits in viewport, no scrolling needed
-        if top <= 0.001 and bottom >= 0.999:
-            return "break"
+        def safe_yview(*args):
+            if not args:
+                return orig_yview()
+            ModernTooltip.hide_all()
+            if args[0] == "scroll" and len(args) >= 2:
+                try:
+                    count = int(args[1])
+                    top, bottom = orig_yview()
+                    # If at bottom and scrolling down: drop event to avoid stutter/flooding
+                    if count > 0 and bottom >= 0.999:
+                        return "break"
+                    # If at top and scrolling up: drop event
+                    if count < 0 and top <= 0.001:
+                        return "break"
+                except Exception:
+                    pass
+            return orig_yview(*args)
 
-        # Normalize delta across operating systems
-        if event.num == 4:
-            raw_delta = 1.0   # Linux scroll up
-        elif event.num == 5:
-            raw_delta = -1.0  # Linux scroll down
-        elif sys.platform == "darwin":
-            raw_delta = float(event.delta)
-        elif sys.platform.startswith("win"):
-            raw_delta = float(event.delta) / 120.0 * 2.5
-        else:
-            raw_delta = float(event.delta) if event.delta else 0.0
+        canvas.yview = safe_yview
 
-        if raw_delta == 0:
-            return "break"
+        # Allow smooth scrolling over all widgets (buttons, labels, cards, sliders)
+        # except when user is explicitly dragging the scrollbar thumb itself
+        def custom_check_valid_scroll(widget):
+            try:
+                if isinstance(widget, ctk.windows.widgets.ctk_scrollbar.CTkScrollbar):
+                    return False
+            except Exception:
+                pass
+            return True
 
-        # On macOS/Windows, negative delta is scrolling DOWN (content moves up)
-        step = -raw_delta
-
-        # Boundary Collision Guard:
-        # If already at the bottom and scrolling down, drop dead inertia events instantly!
-        if step > 0 and bottom >= 0.998:
-            self._scroll_accum = 0.0
-            return "break"
-
-        # If already at the top and scrolling up, drop dead inertia events instantly!
-        if step < 0 and top <= 0.002:
-            self._scroll_accum = 0.0
-            return "break"
-
-        self._scroll_accum += step
-
-        # Throttle redraws to ~60 FPS (every 8ms)
-        if self._scroll_after_id is None:
-            self._scroll_after_id = self.after(8, self._flush_smooth_scroll)
-
-        return "break"
-
-    def _flush_smooth_scroll(self):
-        """Applies accumulated scroll delta in a single smooth step."""
-        self._scroll_after_id = None
-        if abs(self._scroll_accum) < 0.01:
-            self._scroll_accum = 0.0
-            return
-
-        if not hasattr(self, "scroll_frame") or self.scroll_frame is None:
-            self._scroll_accum = 0.0
-            return
-
-        canvas = self.scroll_frame._parent_canvas
-        top, bottom = canvas.yview()
-
-        # Final boundary check before executing canvas scroll
-        if self._scroll_accum > 0 and bottom >= 0.998:
-            self._scroll_accum = 0.0
-            return
-        if self._scroll_accum < 0 and top <= 0.002:
-            self._scroll_accum = 0.0
-            return
-
-        units = int(round(self._scroll_accum))
-        if units == 0:
-            units = 1 if self._scroll_accum > 0 else -1
-
-        canvas.yview("scroll", units, "units")
-        self._scroll_accum = 0.0
+        self.scroll_frame._check_if_valid_scroll = custom_check_valid_scroll
 
     def _disable_slider_mousewheel(self, slider: ctk.CTkSlider):
         """
-        Disables value modification on mouse wheel scroll for a slider,
-        leaving it to the global smooth scroller so page scrolling is completely fluid.
+        Disables value modification on mouse wheel scroll for a slider.
+        Sliders will ONLY change values when clicked and dragged with the mouse.
+        Mouse wheel scroll over sliders will NEVER modify the slider value.
         """
-        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+        for seq in (
+            "<MouseWheel>",
+            "<Button-4>",
+            "<Button-5>",
+            "<Shift-MouseWheel>",
+            "<Shift-Button-4>",
+            "<Shift-Button-5>",
+        ):
             try:
                 slider._canvas.unbind(seq)
             except Exception:
                 pass
+
+        slider._scroll_step = 0.0
+        slider._mouse_scroll_event = lambda event: None
 
     # -------------------------------------------------------------------------
     # UI Builder Methods
@@ -388,10 +495,12 @@ class AutoClipApp(ctk.CTk):
 
         q_btn = self._create_help_btn(
             hdr,
-            box,
-            "Vyberte video soubor z vašeho streamu nebo nahrávání (.mp4, .mkv nebo .mov).\n\n"
-            "PeciCut podporuje i velmi dlouhé soubory (2 až 6+ hodin). Video se načítá bezztrátově "
-            "a analyzuje přímo v paměti bez vytváření obřích souborů na disku."
+            text=(
+                "Vyberte video soubor z vašeho streamu nebo nahrávání (.mp4, .mkv nebo .mov).\n\n"
+                "PeciCut podporuje i velmi dlouhé soubory (2 až 6+ hodin). Video se načítá bezztrátově "
+                "a analyzuje přímo v paměti bez vytváření obřích souborů na disku."
+            ),
+            recommendation="Nahrajte MP4 nebo MKV soubor z OBS Studia o délce 2 až 6 hodin."
         )
         q_btn.pack(side="left", padx=(8, 0))
 
@@ -424,7 +533,7 @@ class AutoClipApp(ctk.CTk):
 
         # Video metadata summary card
         self.meta_card = ctk.CTkFrame(box, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
-        self.meta_card.pack(fill="x", padx=16, pady=(0, 8))
+        self.meta_card.pack(fill="x", padx=16, pady=(0, 14))
 
         self.lbl_meta_info = ctk.CTkLabel(
             self.meta_card,
@@ -434,14 +543,6 @@ class AutoClipApp(ctk.CTk):
             anchor="w"
         )
         self.lbl_meta_info.pack(padx=12, pady=8, anchor="w")
-
-        # Recommendation note
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: Nahrajte MP4 nebo MKV soubor z OBS Studia o délce 2 až 6 hodin.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 12))
 
     def _build_audio_track_section(self, parent):
         """2. Audio track dropdown menu."""
@@ -461,11 +562,13 @@ class AutoClipApp(ctk.CTk):
 
         q_btn = self._create_help_btn(
             hdr,
-            box,
-            "Klíčové nastavení pro záznamy z OBS Studia!\n\n"
-            "OBS typicky nahrává zvuk hry na Stopu 1 a váš mikrofon na Stopu 2 (nebo naopak).\n\n"
-            "Vyberte stopu obsahující POUZE váš mikrofon. PeciCut tak bude analyzovat váš hlas, smích a křik, "
-            "aniž by byl maten hlasitou střelbou nebo hudbou ze hry."
+            text=(
+                "Klíčové nastavení pro záznamy z OBS Studia!\n\n"
+                "OBS typicky nahrává zvuk hry na Stopu 1 a váš mikrofon na Stopu 2 (nebo naopak).\n\n"
+                "Vyberte stopu obsahující POUZE váš mikrofon. PeciCut tak bude analyzovat váš hlas, smích a křik, "
+                "aniž by byl maten hlasitou střelbou nebo hudbou ze hry."
+            ),
+            recommendation="Vyberte samostatnou stopu mikrofonu z OBS (často Stopa 2), nikoliv smíchaný zvuk."
         )
         q_btn.pack(side="left", padx=(8, 0))
 
@@ -492,15 +595,7 @@ class AutoClipApp(ctk.CTk):
             dropdown_hover_color="#262833",
             dropdown_text_color=TEXT_TITLE
         )
-        self.audio_dropdown.pack(anchor="w", padx=16, pady=(0, 6))
-
-        # Recommendation note
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: Vyberte samostatnou stopu mikrofonu z OBS (často Stopa 2), nikoliv smíchaný zvuk.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+        self.audio_dropdown.pack(anchor="w", padx=16, pady=(0, 14))
 
     def _build_parameters_section(self, parent):
         """3. Mode Selection, Sliders, and Target Video Duration."""
@@ -521,11 +616,13 @@ class AutoClipApp(ctk.CTk):
 
         q_btn = self._create_help_btn(
             hdr,
-            box,
-            "• Akční highlighty: Vybere pouze nejhlasitější a nejenergičtější momenty (křik, leknutí, smích, hype). "
-            "Ideální pro tvorbu zábavného sestřihu z dlouhého streamu.\n\n"
-            "• Vyřezat pouze ticho: Zachová celé video v původní chronologii, ale vyřízne mrtvé pasáže, "
-            "kdy nikdo nemluví. Vhodné pro zrychlení celých gameplay záznamů."
+            text=(
+                "• Akční highlighty: Vybere pouze nejhlasitější a nejenergičtější momenty (křik, leknutí, smích, hype). "
+                "Ideální pro tvorbu zábavného sestřihu z dlouhého streamu.\n\n"
+                "• Vyřezat pouze ticho: Zachová celé video v původní chronologii, ale vyřízne mrtvé pasáže, "
+                "kdy nikdo nemluví. Vhodné pro zrychlení celých gameplay záznamů."
+            ),
+            recommendation="Pro YouTube video zvolte 'Akční highlighty'."
         )
         q_btn.pack(side="left", padx=(8, 0))
 
@@ -549,14 +646,7 @@ class AutoClipApp(ctk.CTk):
             dropdown_hover_color="#262833",
             dropdown_text_color=TEXT_TITLE
         )
-        self.mode_dropdown.pack(anchor="w", padx=16, pady=(0, 4))
-
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: Pro YouTube video zvolte 'Akční highlighty'.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        self.mode_dropdown.pack(anchor="w", padx=16, pady=(0, 10))
 
         # 3.2 Target Video Duration
         dur_hdr = ctk.CTkFrame(box, fg_color="transparent")
@@ -571,11 +661,13 @@ class AutoClipApp(ctk.CTk):
 
         q_dur = self._create_help_btn(
             dur_hdr,
-            box,
-            "Chcete mít výsledné video o konkrétní délce (např. přesně 10 nebo 15 minut na YouTube)?\n\n"
-            "Pokud nastavíte limit délky, PeciCut automaticky seřadí všechny zachycené momenty podle intenzity (hlasitosti) "
-            "a vybere jen ty nejlepší hype reakce, které se vejdou do zadaného času!\n\n"
-            "Možnost 'Bez limitu' zachová úplně všechny detekované momenty."
+            text=(
+                "Chcete mít výsledné video o konkrétní délce (např. přesně 10 nebo 15 minut na YouTube)?\n\n"
+                "Pokud nastavíte limit délky, PeciCut automaticky seřadí všechny zachycené momenty podle intenzity (hlasitosti) "
+                "a vybere jen ty nejlepší hype reakce, které se vejdou do zadaného času!\n\n"
+                "Možnost 'Bez limitu' zachová úplně všechny detekované momenty."
+            ),
+            recommendation="'10 minut' je ideální stopáž pro YouTube. Pro kompletní archiv zvolte 'Bez limitu'."
         )
         q_dur.pack(side="left", padx=(8, 0))
 
@@ -601,14 +693,7 @@ class AutoClipApp(ctk.CTk):
             dropdown_hover_color="#262833",
             dropdown_text_color=TEXT_TITLE
         )
-        self.target_dur_dropdown.pack(anchor="w", padx=16, pady=(2, 4))
-
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: '10 minut' je ideální stopáž pro YouTube. Pro kompletní archiv zvolte 'Bez limitu'.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        self.target_dur_dropdown.pack(anchor="w", padx=16, pady=(2, 10))
 
         # 3.3 Slider 1: Loudness Threshold dBFS
         s1_frame = ctk.CTkFrame(box, fg_color="transparent")
@@ -621,16 +706,18 @@ class AutoClipApp(ctk.CTk):
             text_color=TEXT_TITLE
         ).pack(side="left")
 
-        q_thresh = self._create_help_btn(
+        self.q_thresh = self._create_help_btn(
             s1_frame,
-            box,
-            "Určuje, jak hlasitý zvuk z mikrofonu musí být, aby se spustilo nahrávání klipu:\n\n"
-            "• -10 dBFS: Pouze extrémní řev, panika a výkřiky leknutí.\n"
-            "• -14 dBFS (výchozí): Standardní hlasitý křik, záchvat smíchu a hype reakce.\n"
-            "• -18 dBFS: Zachytí i běžné mluvení a mírně zvýšený hlas.\n"
-            "• -28 až -35 dBFS: Vhodné pro režim vyřezání ticha."
+            text=(
+                "Určuje, jak hlasitý zvuk z mikrofonu musí být, aby se spustilo nahrávání klipu:\n\n"
+                "• -10 dBFS: Pouze extrémní řev, panika a výkřiky leknutí.\n"
+                "• -14 dBFS (výchozí): Standardní hlasitý křik, záchvat smíchu a hype reakce.\n"
+                "• -18 dBFS: Zachytí i běžné mluvení a mírně zvýšený hlas.\n"
+                "• -28 až -35 dBFS: Vhodné pro režim vyřezání ticha."
+            ),
+            recommendation="-14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS."
         )
-        q_thresh.pack(side="left", padx=(8, 0))
+        self.q_thresh.pack(side="left", padx=(8, 0))
 
         self.lbl_threshold_val = ctk.CTkLabel(
             s1_frame,
@@ -652,16 +739,8 @@ class AutoClipApp(ctk.CTk):
             button_hover_color=ORANGE_HOVER
         )
         self.slider_threshold.set(-14.0)
-        self.slider_threshold.pack(fill="x", padx=16, pady=(0, 2))
+        self.slider_threshold.pack(fill="x", padx=16, pady=(0, 8))
         self._disable_slider_mousewheel(self.slider_threshold)
-
-        self.lbl_threshold_hint = ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: -14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        )
-        self.lbl_threshold_hint.pack(anchor="w", padx=16, pady=(0, 10))
 
         # 3.4 Padding frame (Before & After sliders side by side)
         pad_container = ctk.CTkFrame(box, fg_color="transparent")
@@ -676,9 +755,11 @@ class AutoClipApp(ctk.CTk):
         ctk.CTkLabel(p_before_hdr, text="Kontext před peakem:", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE).pack(side="left")
         q_p_bef = self._create_help_btn(
             p_before_hdr,
-            pad_left,
-            "Kolik sekund videa před začátkem výkřiku má klip obsahovat.\n\n"
-            "Například 4 sekundy zajistí, že divák uvidí herní situaci nebo jump scare, který výkřik způsobil."
+            text=(
+                "Kolik sekund videa před začátkem výkřiku má klip obsahovat.\n\n"
+                "Například 4 sekundy zajistí, že divák uvidí herní situaci nebo jump scare, který výkřik způsobil."
+            ),
+            recommendation="4.0 s (ukáže herní akci před výkřikem)"
         )
         q_p_bef.pack(side="left", padx=(6, 0))
 
@@ -697,15 +778,8 @@ class AutoClipApp(ctk.CTk):
             button_hover_color=ORANGE_HOVER
         )
         self.slider_pad_before.set(4.0)
-        self.slider_pad_before.pack(fill="x", pady=(2, 4))
+        self.slider_pad_before.pack(fill="x", pady=(2, 6))
         self._disable_slider_mousewheel(self.slider_pad_before)
-
-        ctk.CTkLabel(
-            pad_left,
-            text="💡 Doporučení: 4.0 s (ukáže herní akci před výkřikem)",
-            font=ctk.CTkFont(size=10),
-            text_color=TEXT_REC
-        ).pack(anchor="w")
 
         # Context After
         pad_right = ctk.CTkFrame(pad_container, fg_color="transparent")
@@ -716,9 +790,11 @@ class AutoClipApp(ctk.CTk):
         ctk.CTkLabel(p_after_hdr, text="Kontext po peaku:", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_TITLE).pack(side="left")
         q_p_aft = self._create_help_btn(
             p_after_hdr,
-            pad_right,
-            "Kolik sekund videa po skončení výkřiku má klip pokračovat.\n\n"
-            "Například 2 sekundy zajistí, že video neusekne doznění smíchu nebo komentář těsně po reakci."
+            text=(
+                "Kolik sekund videa po skončení výkřiku má klip pokračovat.\n\n"
+                "Například 2 sekundy zajistí, že video neusekne doznění smíchu nebo komentář těsně po reakci."
+            ),
+            recommendation="2.0 s (doznění smíchu a komentáře)"
         )
         q_p_aft.pack(side="left", padx=(6, 0))
 
@@ -737,15 +813,8 @@ class AutoClipApp(ctk.CTk):
             button_hover_color=ORANGE_HOVER
         )
         self.slider_pad_after.set(2.0)
-        self.slider_pad_after.pack(fill="x", pady=(2, 4))
+        self.slider_pad_after.pack(fill="x", pady=(2, 6))
         self._disable_slider_mousewheel(self.slider_pad_after)
-
-        ctk.CTkLabel(
-            pad_right,
-            text="💡 Doporučení: 2.0 s (doznění smíchu a komentáře)",
-            font=ctk.CTkFont(size=10),
-            text_color=TEXT_REC
-        ).pack(anchor="w")
 
         # 3.5 Smart merge gap slider
         gap_frame = ctk.CTkFrame(box, fg_color="transparent")
@@ -762,10 +831,12 @@ class AutoClipApp(ctk.CTk):
 
         q_gap = self._create_help_btn(
             gap_frame,
-            box,
-            "Pokud se dvě hlasité reakce odehrají těsně za sebou (např. se zasmějete, na 1 sekundu se nadechnete "
-            "a znovu zařvete), PeciCut tyto momenty automaticky spojí do jednoho plynulého klipu.\n\n"
-            "Díky tomu se video neseká po půlsekundách a střih působí profesionálně a přirozeně."
+            text=(
+                "Pokud se dvě hlasité reakce odehrají těsně za sebou (např. se zasmějete, na 1 sekundu se nadechnete "
+                "a znovu zařvete), PeciCut tyto momenty automaticky spojí do jednoho plynulého klipu.\n\n"
+                "Díky tomu se video neseká po půlsekundách a střih působí profesionálně a přirozeně."
+            ),
+            recommendation="2.0 s zajistí plynulý sestřih bez trhání."
         )
         q_gap.pack(side="left", padx=(6, 0))
 
@@ -784,15 +855,8 @@ class AutoClipApp(ctk.CTk):
             button_hover_color=ORANGE_HOVER
         )
         self.slider_gap.set(2.0)
-        self.slider_gap.pack(fill="x", padx=16, pady=(0, 2))
+        self.slider_gap.pack(fill="x", padx=16, pady=(0, 10))
         self._disable_slider_mousewheel(self.slider_gap)
-
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: 2.0 s zajistí plynulý sestřih bez trhání.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 10))
 
         # 3.6 Facecam AI Feature Card
         facecam_box = ctk.CTkFrame(box, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
@@ -816,14 +880,16 @@ class AutoClipApp(ctk.CTk):
 
         q_ai = self._create_help_btn(
             f_hdr,
-            facecam_box,
-            "Jak funguje Facecam AI:\n\n"
-            "1. Analýza výrazu obličeje: Hledá v záběru obličej a měří otevření úst (křik, leknutí, údiv) "
-            "a široký úsměv (záchvat smíchu).\n\n"
-            "2. Detekce pohybu těla a hlavy: Měří kinetickou energii (když streamer nadskočí leknutím, hází hlavou či gestikuluje).\n\n"
-            "3. Inteligentní hybridní skóre: Zkombinuje hlasitost audia s reakcí ve webkameře. Momenty s velkou reakcí v obličeji "
-            "dostanou nejvyšší prioritu pro finální sestřih, zatímco náhodné zvuky ze hry bez reakce v obličeji jsou odfiltrovány.\n\n"
-            "⚡ Běží bleskově dvoufázově — skenuje pouze kandidátské momenty (cca 5-10 sekund na 4h video)."
+            text=(
+                "Jak funguje Facecam AI:\n\n"
+                "1. Analýza výrazu obličeje: Hledá v záběru obličej a měří otevření úst (křik, leknutí, údiv) "
+                "a široký úsměv (záchvat smíchu).\n\n"
+                "2. Detekce pohybu těla a hlavy: Měří kinetickou energii (když streamer nadskočí leknutím, hází hlavou či gestikuluje).\n\n"
+                "3. Inteligentní hybridní skóre: Zkombinuje hlasitost audia s reakcí ve webkameře. Momenty s velkou reakcí v obličeji "
+                "dostanou nejvyšší prioritu pro finální sestřih, zatímco náhodné zvuky ze hry bez reakce v obličeji jsou odfiltrovány.\n\n"
+                "⚡ Běží bleskově dvoufázově — skenuje pouze kandidátské momenty (cca 5-10 sekund na 4h video)."
+            ),
+            recommendation="Ponechte zapnuté pro záznamy s webkamerou. Aplikace automaticky detekuje obličej."
         )
         q_ai.pack(side="left", padx=(8, 0))
 
@@ -833,14 +899,7 @@ class AutoClipApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=TEXT_BODY
         )
-        sub_ai.pack(anchor="w", padx=12, pady=(0, 6))
-
-        ctk.CTkLabel(
-            facecam_box,
-            text="💡 Doporučení pro začátek: Ponechte zapnuté pro záznamy s webkamerou. Aplikace automaticky detekuje obličej.",
-            font=ctk.CTkFont(size=10),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=12, pady=(0, 10))
+        sub_ai.pack(anchor="w", padx=12, pady=(0, 10))
 
     def _build_export_section(self, parent):
         """4. Single-choice output format (Dropdown) and destination directory."""
@@ -860,11 +919,13 @@ class AutoClipApp(ctk.CTk):
 
         q_fmt = self._create_help_btn(
             hdr,
-            box,
-            "• Hotové MP4 video: Okamžitý bezztrátový střih přes FFmpeg concat demuxer (-c copy). "
-            "Zachovává 100% původní kvality obrazu i všechny zvukové stopy, hotovo za 1-2 minuty.\n\n"
-            "• EDL Timeline: Vygeneruje soubor CMX 3600 EDL pro DaVinci Resolve a Adobe Premiere Pro. "
-            "Umožní vám otevřít hotové střihy přímo v editoru a doladit hudbu, efekty či titulky."
+            text=(
+                "• Hotové MP4 video: Okamžitý bezztrátový střih přes FFmpeg concat demuxer (-c copy). "
+                "Zachovává 100% původní kvality obrazu i všechny zvukové stopy, hotovo za 1-2 minuty.\n\n"
+                "• EDL Timeline: Vygeneruje soubor CMX 3600 EDL pro DaVinci Resolve a Adobe Premiere Pro. "
+                "Umožní vám otevřít hotové střihy přímo v editoru a doladit hudbu, efekty či titulky."
+            ),
+            recommendation="'Hotové MP4 video' pro okamžité shlédnutí bez práce, 'EDL' pro úpravy v DaVinci/Premiere."
         )
         q_fmt.pack(side="left", padx=(8, 0))
 
@@ -887,14 +948,7 @@ class AutoClipApp(ctk.CTk):
             dropdown_hover_color="#262833",
             dropdown_text_color=TEXT_TITLE
         )
-        self.format_dropdown.pack(anchor="w", padx=16, pady=(0, 4))
-
-        ctk.CTkLabel(
-            box,
-            text="💡 Doporučení pro začátek: 'Hotové MP4 video' pro okamžité shlédnutí bez práce, 'EDL' pro úpravy v DaVinci/Premiere.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_REC
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        self.format_dropdown.pack(anchor="w", padx=16, pady=(0, 12))
 
         # Output folder row
         out_row = ctk.CTkFrame(box, fg_color="transparent")
@@ -974,34 +1028,29 @@ class AutoClipApp(ctk.CTk):
         )
         self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
 
-        # Result card (Hidden initially)
-        self.result_card = ctk.CTkFrame(
-            box,
-            fg_color=BG_CARD_INNER,
-            corner_radius=8,
-            border_width=1,
-            border_color=ORANGE_PRIMARY
-        )
+        # Result row (Hidden initially - minimal checkmark + folder link)
+        self.result_card = ctk.CTkFrame(box, fg_color="transparent")
 
-        self.lbl_result_summary = ctk.CTkLabel(
+        self.lbl_result_check = ctk.CTkLabel(
             self.result_card,
-            text="🎉 Úspěšně dokončeno!",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=ORANGE_ACCENT_TEXT
+            text="✓ Hotovo!",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#22C55E"
         )
-        self.lbl_result_summary.pack(anchor="w", padx=14, pady=(10, 4))
+        self.lbl_result_check.pack(side="left", padx=(0, 14))
 
         self.btn_open_folder = ctk.CTkButton(
             self.result_card,
             text="📂 Otevřít složku s výsledkem",
             command=self._on_open_result_folder,
-            height=34,
+            height=32,
+            font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=ORANGE_PRIMARY,
             hover_color=ORANGE_HOVER,
             text_color="#FFFFFF",
-            font=ctk.CTkFont(size=13, weight="bold")
+            corner_radius=6
         )
-        self.btn_open_folder.pack(anchor="w", padx=14, pady=(4, 10))
+        self.btn_open_folder.pack(side="left")
 
     def _build_footer(self):
         """Bottom status bar."""
@@ -1119,15 +1168,13 @@ class AutoClipApp(ctk.CTk):
         if "highlighty" in choice.lower():
             self.slider_threshold.set(-14.0)
             self.lbl_threshold_val.configure(text="-14.0 dBFS")
-            self.lbl_threshold_hint.configure(
-                text="💡 Doporučení pro začátek: -14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS."
-            )
+            if hasattr(self, "q_thresh") and hasattr(self.q_thresh, "_tooltip"):
+                self.q_thresh._tooltip.set_recommendation("-14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS.")
         else:
             self.slider_threshold.set(-28.0)
             self.lbl_threshold_val.configure(text="-28.0 dBFS")
-            self.lbl_threshold_hint.configure(
-                text="💡 Doporučení pro začátek: -28.0 dBFS pro ticho (odstraní mrtvé pauzy bez hlasu)."
-            )
+            if hasattr(self, "q_thresh") and hasattr(self.q_thresh, "_tooltip"):
+                self.q_thresh._tooltip.set_recommendation("-28.0 dBFS pro ticho (odstraní mrtvé pauzy bez hlasu).")
 
     def _on_select_file(self):
         """Opens file dialog for video selection and parses metadata."""
@@ -1145,10 +1192,10 @@ class AutoClipApp(ctk.CTk):
         video_path = Path(chosen)
         self.current_video_path = video_path
         self.lbl_file_path.configure(text=video_path.name, text_color=TEXT_TITLE)
-        self.lbl_status.configure(text=f"Načítám metadata souboru {video_path.name}...")
-
         # Reset results
         self.result_card.pack_forget()
+        self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+        self.lbl_status.configure(text=f"Načítám metadata souboru {video_path.name}...")
 
         # Load metadata in background thread
         threading.Thread(target=self._load_metadata_worker, args=(video_path,), daemon=True).start()
@@ -1266,6 +1313,7 @@ class AutoClipApp(ctk.CTk):
         self.btn_select_file.configure(state="disabled")
         self.btn_cancel.configure(state="normal")
         self.result_card.pack_forget()
+        self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
         self.progress_bar.set(0.0)
 
         # Collect parameters
@@ -1478,28 +1526,19 @@ class AutoClipApp(ctk.CTk):
 
             if cancelled:
                 self.progress_bar.set(0.0)
+                self.result_card.pack_forget()
+                self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
                 self.lbl_status.configure(text="Zpracování bylo zrušeno uživatelem.")
                 messagebox.showinfo("Zrušeno", "Operace byla zrušena.")
             elif error_msg:
+                self.result_card.pack_forget()
+                self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
                 self.lbl_status.configure(text="Zpracování selhalo.")
                 messagebox.showerror("Chyba zpracování", error_msg)
             else:
                 self.progress_bar.set(1.0)
-                self.lbl_status.configure(text="Všechny operace byly úspěšně dokončeny.")
-
-                if stats:
-                    summary_lines = [
-                        f"🎉 Hotovo! Detekováno a sestříháno {stats['segment_count']} klipů.",
-                        f"⏱️ Původní délka: {stats['original_str']}  ➔  Výsledný sestřih: {stats['kept_str']}",
-                        f"🚀 Ušetřeno: {stats['percent_reduced']:.1f}% z celkového času záznamu!",
-                    ]
-                    if stats.get("facecam_active"):
-                        summary_lines.append("🤖 Facecam AI: Výrazy obličeje, smích a pohyb zohledněny pro výběr nejlepších reakcí.")
-                    if generated_files:
-                        summary_lines.append(f"📁 Vytvořen soubor: {generated_files[0].name}")
-
-                    self.lbl_result_summary.configure(text="\n".join(summary_lines))
-                    self.result_card.pack(fill="x", padx=16, pady=(10, 14))
+                self.lbl_status.pack_forget()
+                self.result_card.pack(anchor="w", padx=16, pady=(2, 12))
 
         self.after(0, restore)
 
