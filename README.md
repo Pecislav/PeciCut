@@ -1,11 +1,19 @@
-# PeciCut 🎬
+# Pecislav Studio 🎬
 
-> **Automatický střihač dlouhých záznamů (2–6 hodin) s Facecam AI a detekcí hype reakcí z mikrofonu.**  
+> **All-in-One Creator Suite pro streamery a tvůrce obsahu od Pecislava.**  
 > Multiplatformní desktopová aplikace pro macOS i Windows v moderním Twitch/YouTube Creator stylu (oranžovo-černý design) postavená na CustomTkinter, OpenCV YuNet AI a bezztrátovém FFmpeg enginu.
 
 ---
 
-## 📋 Klíčové funkce
+## 🧭 Architektura Pecislav Studio
+
+Pecislav Studio nabízí moderní All-in-One rozhraní s postranním panelem:
+- 🎬 **PeciCut** (Aktivní modul): Automatický střihač záznamů streamů podle reakcí hlasu a webkamery.
+- ⚙️ **Nastavení Studia**: Centrální správa barevného motivu (Systémový / Světlý bílý / Tmavý černý), 1-click kontrola integrity stažených součástí (FFmpeg, AI modely) a ověřování aktualizací přímo z GitHubu.
+
+---
+
+## 📋 Klíčové funkce modulu PeciCut
 
 1. **🤖 Facecam Computer Vision AI (Reakce z webkamery)**:
    - **Analýza výrazu obličeje**: Detekuje otevřená ústa při výkřiku, leknutí či údivu a široký úsměv při záchvatu smíchu.
@@ -17,13 +25,13 @@
    - PeciCut ohodnotí zachycené momenty podle AI skóre a hlasitosti a **vybere nejzábavnější reakce**, které se přesně vejdou do zadaného limitu, a seřadí je zpět do přirozeného toku streamu.
 3. **Doporučené hodnoty a nápověda s otazníky (?)**:
    - U každého nastavení je jasně vypsané **doporučení pro začátek** (práh -14 dBFS, kontext 4s/2s, sloučení 2s).
-   - Vedle každého parametru je klikací tlačítko **(?)**, které otevře přímo v aplikaci srozumitelné vysvětlení funkce.
+   - Vedle každého parametru je klikací tlačítko **(?)**, které otevře přímo v aplikaci srozumitelné plovoucí vysvětlení funkce.
 4. **Dokonale vycentrovaný PRO CREATOR design**:
    - Vertikálně centrovaný oranžový štítek `PRO CREATOR` sladěný s typografií.
    - Možnost vložit vlastní logo do `assets/logo.png`.
 5. **1-Click Automatické stažení FFmpeg**:
-   - Pokud FFmpeg chybí, svítí tlačítko `❌ FFmpeg chybí (Klikni pro stažení)`.
-   - Jedním kliknutím PeciCut sám stáhne a zprovozní oficiální statické binárky do `bin/` a indikátor se rozsvítí zeleně: `✓ FFmpeg & FFprobe: Připraveno`.
+   - V postranním panelu svítí stav: `✓ FFmpeg připraven` nebo `⚠️ FFmpeg chybí`.
+   - Jedním kliknutím Pecislav Studio samo stáhne a zprovozní oficiální statické binárky do `bin/`.
 6. **Plynulé ovládání sliderů**:
    - Kolečko myši plynule posouvá celou stránku, slidery se mění výhradně přímým kliknutím a tažením myší do stran.
 7. **Podpora multi-track audia z OBS**:
@@ -38,7 +46,7 @@
 
 ```text
 autoclip_highlight_cutter/
-├── assets/               # Složka pro logo (logo.png) a ikonu aplikace
+├── assets/               # Složka pro logo (logo.png) a ikonu studia
 ├── bin/                  # Lokální složka pro přibalené binárky FFmpeg
 ├── models/               # AI modely (YuNet ONNX, Haar Cascades pro obličej a smích)
 ├── facecam_ai.py         # Facecam AI engine (detekce obličeje, úst, smíchu a pohybu)
@@ -46,7 +54,7 @@ autoclip_highlight_cutter/
 ├── audio_analyzer.py     # Proudová extrakce audia a záznam peak dBFS
 ├── edl_generator.py      # CMX 3600 standard EDL generátor s timecode matematikou
 ├── video_cutter.py       # Slučování segmentů, AI řazení na cílovou délku a concat demuxer
-├── main_gui.py           # Hlavní PeciCut CustomTkinter GUI
+├── main_gui.py           # Hlavní Pecislav Studio CustomTkinter GUI
 ├── requirements.txt      # Seznam závislostí
 └── README.md             # Kompletní dokumentace
 ```
@@ -68,7 +76,7 @@ python3 main_gui.py
 ### macOS (.app bundle)
 ```bash
 pyinstaller --noconfirm --onedir --windowed \
-  --name "PeciCut" \
+  --name "PecislavStudio" \
   --add-data "models:models" \
   --add-data "assets:assets" \
   main_gui.py
@@ -77,9 +85,9 @@ pyinstaller --noconfirm --onedir --windowed \
 ### Windows (.exe soubor)
 ```bash
 pyinstaller --noconfirm --onedir --windowed ^
-  --name "PeciCut" ^
+  --name "PecislavStudio" ^
   --add-data "models;models" ^
   --add-data "assets;assets" ^
   main_gui.py
 ```
-Výsledný spustitelný program najdete ve složce `dist/PeciCut`.
+Výsledný spustitelný program najdete ve složce `dist/PecislavStudio`.

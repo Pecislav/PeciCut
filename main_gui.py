@@ -1,7 +1,8 @@
 """
-main_gui.py - PeciCut: Creator-focused video highlight cutter with modern CustomTkinter GUI.
+main_gui.py - Pecislav Studio: Creator Suite with modern CustomTkinter GUI.
 
-Features:
+Modules:
+- PeciCut: Creator-focused video highlight cutter with Facecam AI and audio hype detection.
 - Target duration limitation (e.g. 5, 10, 15, 20, 30 min or unlimited), prioritizing loudest hype moments.
 - Recommended initial values clearly stated under every single setting.
 - Interactive question mark (?) help buttons explaining each feature in plain language.
@@ -9,7 +10,7 @@ Features:
 - 1-click automatic FFmpeg downloader & status indicator with ❌ / ✓ feedback.
 - Clean dropdown selectors for mode, duration, and output format.
 - Sliders protected against accidental mousewheel/trackpad scrolling.
-- Branded as PeciCut with custom Twitch/YouTube creator theme.
+- Branded as Pecislav Studio by Pecislav with custom Twitch/YouTube creator theme.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from typing import Dict, List, Optional, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 from ffmpeg_utils import (
     download_ffmpeg_auto,
@@ -70,6 +72,65 @@ TEXT_MUTED = ("#6B7280", "#606675")         # Pomocné texty a tipy
 TEXT_REC = ("#C25E00", "#E08A3C")           # Teplá oranžovo-zlatá pro doporučení
 TRACK_COLOR = ("#E5E7EB", "#242630")        # Pozadí dráhy sliderů a progress baru
 BORDER_SUBTLE = ("#CBD5E1", "#363947")      # Ohraničení tlačítek a přepínačů
+
+# -----------------------------------------------------------------------------
+# Slanted Theme Preview Swatches Generator (Sharp Angle Cuts)
+# -----------------------------------------------------------------------------
+
+def create_slanted_theme_image(theme_type: str, w: int = 125, h: int = 42, r: int = 7) -> Image.Image:
+    """
+    Generates a crisp slanted color preview swatch without soft fade:
+    - 'system': (černá / oranžová / bílá)
+    - 'light': (oranžová / bílá)
+    - 'dark': (oranžová / černá)
+    """
+    scale = 3  # 3x super-sampling for smooth anti-aliased diagonal edges
+    sw, sh = w * scale, h * scale
+    img = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    c_orange = (255, 109, 0, 255)
+    c_white = (248, 249, 251, 255)
+    c_black = (18, 19, 24, 255)
+
+    # Sharp diagonal cut (slant dx across height)
+    slant = sh * 0.45
+
+    if theme_type == 'system':
+        x1 = sw * 0.33
+        x2 = sw * 0.67
+        # 1. Černá (Left)
+        draw.polygon([(0, 0), (x1 + slant/2, 0), (x1 - slant/2, sh), (0, sh)], fill=c_black)
+        # 2. Oranžová (Middle)
+        draw.polygon([(x1 + slant/2, 0), (x2 + slant/2, 0), (x2 - slant/2, sh), (x1 - slant/2, sh)], fill=c_orange)
+        # 3. Bílá (Right)
+        draw.polygon([(x2 + slant/2, 0), (sw, 0), (sw, sh), (x2 - slant/2, sh)], fill=c_white)
+    elif theme_type == 'light':
+        x = sw * 0.50
+        # 1. Oranžová (Left)
+        draw.polygon([(0, 0), (x + slant/2, 0), (x - slant/2, sh), (0, sh)], fill=c_orange)
+        # 2. Bílá (Right)
+        draw.polygon([(x + slant/2, 0), (sw, 0), (sw, sh), (x - slant/2, sh)], fill=c_white)
+    elif theme_type == 'dark':
+        x = sw * 0.50
+        # 1. Oranžová (Left)
+        draw.polygon([(0, 0), (x + slant/2, 0), (x - slant/2, sh), (0, sh)], fill=c_orange)
+        # 2. Černá (Right)
+        draw.polygon([(x + slant/2, 0), (sw, 0), (sw, sh), (x - slant/2, sh)], fill=c_black)
+
+    # Rounded rectangle mask
+    mask = Image.new('L', (sw, sh), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=r * scale, fill=255)
+
+    out = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
+    out.paste(img, (0, 0), mask=mask)
+
+    # Subtle inner border
+    draw_out = ImageDraw.Draw(out)
+    draw_out.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=r * scale, outline=(100, 105, 120, 120), width=max(1, int(1.2 * scale)))
+
+    return out.resize((w, h), Image.Resampling.LANCZOS)
 
 # -----------------------------------------------------------------------------
 # Floating Modern Tooltip (Hover Overlay - Zero Layout Shift)
@@ -271,470 +332,25 @@ class ModernTooltip:
             cls.active_tooltip.hide()
 
 # -----------------------------------------------------------------------------
-# Settings & Diagnostics Dialog (Vzhled, stažené součásti, kontrola verze)
+# Settings Dialog Compatibility Stub (Now integrated natively into Pecislav Studio)
 # -----------------------------------------------------------------------------
 
-class SettingsDialog(ctk.CTkToplevel):
-    """
-    Settings modal window for PeciCut:
-    1. Appearance mode: System / Light (Bílá) / Dark (Černá)
-    2. Component downloads integrity check: FFmpeg, FFprobe, Facecam AI models, directories
-    3. Version & update check: current version vs latest GitHub release
-    """
+class SettingsDialog:
+    """Compatibility stub — switches to Pecislav Studio's integrated settings view."""
     def __init__(self, parent: 'AutoClipApp'):
-        super().__init__(parent)
-        self.parent = parent
-        # Start fully transparent — prevents top-left flicker on macOS
-        self.attributes("-alpha", 0)
-
-        self.title("PeciCut • Nastavení")
-        self.geometry("540x620")
-        self.minsize(500, 560)
-        self.configure(fg_color=BG_WINDOW)
-
-        # Center then reveal — no flicker; give CTk init time before centering
-        self.transient(parent)
-        self.after(10, self._center_and_focus)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-
-        # Header
-        hdr = ctk.CTkFrame(self, corner_radius=0, fg_color=BG_HEADER)
-        hdr.pack(fill="x", padx=0, pady=0)
-
-        hdr_row = ctk.CTkFrame(hdr, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=20, pady=14)
-
-        ctk.CTkLabel(
-            hdr_row,
-            text="⚙️ Nastavení PeciCut",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(side="left")
-
-        btn_close_x = ctk.CTkButton(
-            hdr_row,
-            text="✕ Zavřít",
-            width=76,
-            height=28,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=("#E5E7EB", "#20222B"),
-            hover_color=("#D1D5DB", "#2B2E3B"),
-            text_color=TEXT_TITLE,
-            command=self._on_close
-        )
-        btn_close_x.pack(side="right")
-
-        # Scrollable container
-        body = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=16, pady=12)
-
-        # ---------------------------------------------------------------------
-        # 1. Barevný režim aplikace (Systémová / Bílá / Černá)
-        # ---------------------------------------------------------------------
-        theme_card = ctk.CTkFrame(body, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
-        theme_card.pack(fill="x", pady=(0, 12))
-
-        ctk.CTkLabel(
-            theme_card,
-            text="🎨 Barevný motiv aplikace",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(anchor="w", padx=16, pady=(12, 2))
-
-        ctk.CTkLabel(
-            theme_card,
-            text="Přepněte mezi systémovým, světlým bílým nebo tmavým černým režimem:",
-            font=ctk.CTkFont(size=12),
-            text_color=TEXT_BODY
-        ).pack(anchor="w", padx=16, pady=(0, 8))
-
-        current_mode = ctk.get_appearance_mode()
-        mode_map = {"System": "Systémová", "Light": "Bílá", "Dark": "Černá"}
-        init_mode = mode_map.get(current_mode, "Černá")
-
-        self.seg_theme = ctk.CTkSegmentedButton(
-            theme_card,
-            values=["Systémová", "Bílá", "Černá"],
-            command=self._on_theme_change,
-            selected_color=ORANGE_PRIMARY,
-            selected_hover_color=ORANGE_HOVER,
-            unselected_color=("#E5E7EB", "#20222B"),
-            unselected_hover_color=("#D1D5DB", "#2B2E3B"),
-            text_color=TEXT_TITLE,
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.seg_theme.set(init_mode)
-        self.seg_theme.pack(fill="x", padx=16, pady=(0, 14))
-
-        # ---------------------------------------------------------------------
-        # 2. Kontrola stažených součástí
-        # ---------------------------------------------------------------------
-        comp_card = ctk.CTkFrame(body, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
-        comp_card.pack(fill="x", pady=(0, 12))
-
-        comp_hdr = ctk.CTkFrame(comp_card, fg_color="transparent")
-        comp_hdr.pack(fill="x", padx=16, pady=(12, 6))
-
-        ctk.CTkLabel(
-            comp_hdr,
-            text="📦 Kontrola stažených součástí",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(side="left")
-
-        btn_recheck = ctk.CTkButton(
-            comp_hdr,
-            text="🔄 Zkontrolovat",
-            width=110,
-            height=28,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=("#E5E7EB", "#20222B"),
-            hover_color=("#D1D5DB", "#2B2E3B"),
-            text_color=TEXT_TITLE,
-            command=self._refresh_components
-        )
-        btn_recheck.pack(side="right")
-
-        self.comp_rows_frame = ctk.CTkFrame(comp_card, fg_color="transparent")
-        self.comp_rows_frame.pack(fill="x", padx=16, pady=(0, 12))
-
-        # ---------------------------------------------------------------------
-        # 3. Verze aplikace a aktualizace
-        # ---------------------------------------------------------------------
-        ver_card = ctk.CTkFrame(body, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
-        ver_card.pack(fill="x", pady=(0, 8))
-
-        ver_hdr = ctk.CTkFrame(ver_card, fg_color="transparent")
-        ver_hdr.pack(fill="x", padx=16, pady=(12, 6))
-
-        ctk.CTkLabel(
-            ver_hdr,
-            text="🚀 Verze aplikace a aktualizace",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(side="left")
-
-        self.btn_update = ctk.CTkButton(
-            ver_hdr,
-            text="🔍 Zkontrolovat aktualizace",
-            width=165,
-            height=28,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=ORANGE_PRIMARY,
-            hover_color=ORANGE_HOVER,
-            text_color="#FFFFFF",
-            command=self._check_for_updates
-        )
-        self.btn_update.pack(side="right")
-
-        ver_body = ctk.CTkFrame(ver_card, fg_color="transparent")
-        ver_body.pack(fill="x", padx=16, pady=(0, 14))
-
-        ctk.CTkLabel(
-            ver_body,
-            text=f"Nainstalovaná verze: PeciCut v{APP_VERSION} (by Pecislav)",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(anchor="w")
-
-        self.lbl_update_status = ctk.CTkLabel(
-            ver_body,
-            text="✓ Používáte nejnovější verzi aplikace.",
-            font=ctk.CTkFont(size=11),
-            text_color="#22C55E"
-        )
-        self.lbl_update_status.pack(anchor="w", pady=(3, 0))
-
-        # Footer button
-        footer_btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        footer_btn_frame.pack(fill="x", padx=16, pady=(0, 12))
-
-        ctk.CTkButton(
-            footer_btn_frame,
-            text="✓ Hotovo",
-            height=34,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=ORANGE_PRIMARY,
-            hover_color=ORANGE_HOVER,
-            text_color="#FFFFFF",
-            command=self._on_close
-        ).pack(fill="x")
-
-        # Initial check
-        self._refresh_components()
-
-    def _on_close(self):
-        try:
-            self.grab_release()
-        except Exception:
-            pass
-        try:
-            self.parent._close_dim_overlay()
-            self.parent.settings_dialog = None
-        except Exception:
-            pass
-        self.destroy()
-
-    def _center_and_focus(self):
-        try:
-            # Use fixed size we set in geometry() — reqwidth is unreliable before visible
-            w, h = 540, 620
-            px = self.parent.winfo_rootx()
-            py = self.parent.winfo_rooty()
-            pw = self.parent.winfo_width()
-            ph = self.parent.winfo_height()
-            x = px + max(0, (pw - w) // 2)
-            y = py + max(0, (ph - h) // 2)
-            self.geometry(f"{w}x{h}+{x}+{y}")
-            # Flush geometry to window manager BEFORE making visible
-            self.update_idletasks()
-        except Exception:
-            pass
-        # Now reveal — window is already at correct position
-        self.attributes("-alpha", 1)
-        try:
-            self.lift()
-            self.focus_force()
-        except Exception:
-            pass
-
-    def _on_theme_change(self, choice: str):
-        if choice == "Bílá":
-            ctk.set_appearance_mode("Light")
-        elif choice == "Černá":
-            ctk.set_appearance_mode("Dark")
-        else:
-            ctk.set_appearance_mode("System")
-
-    # Spinner frames for component check animation
-    _SPINNER = ("⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷")
-
-    def _refresh_components(self):
-        """Animated component check with spinner per row, then green/red results."""
-        # Generation counter — invalidates any previous animation run
-        self._check_gen = getattr(self, "_check_gen", 0) + 1
-        my_gen = self._check_gen
-
-        # Clear existing rows
-        for child in self.comp_rows_frame.winfo_children():
-            child.destroy()
-
-        # Loading bg colors (slightly different from result colors)
-        loading_bg = ("#E5E7EB", "#1C1E27")
-
-        # Build 3 spinner placeholder rows immediately
-        comps = [
-            "FFmpeg & FFprobe",
-            "Facecam AI modely",
-            "Pracovní adresáře aplikace",
-        ]
-        row_refs = []  # (row_frame, title_lbl, sub_lbl)
-        for name in comps:
-            row = ctk.CTkFrame(
-                self.comp_rows_frame,
-                fg_color=loading_bg, corner_radius=6,
-                border_width=1, border_color=BORDER_CARD
-            )
-            row.pack(fill="x", pady=4)
-            info = ctk.CTkFrame(row, fg_color="transparent")
-            info.pack(side="left", fill="x", expand=True, padx=12, pady=8)
-            t_lbl = ctk.CTkLabel(
-                info,
-                text=f"⣾  {name}",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=TEXT_MUTED
-            )
-            t_lbl.pack(anchor="w")
-            s_lbl = ctk.CTkLabel(
-                info,
-                text="Kontroluji...",
-                font=ctk.CTkFont(size=11),
-                text_color=TEXT_MUTED
-            )
-            s_lbl.pack(anchor="w")
-            row_refs.append((row, t_lbl, s_lbl))
-
-        spin_idx = [0]
-
-        def tick():
-            if not self.winfo_exists():
-                return
-            if self._check_gen != my_gen:
-                return
-            spin_idx[0] = (spin_idx[0] + 1) % len(self._SPINNER)
-            f = self._SPINNER[spin_idx[0]]
-            for i, (_, t_lbl, _) in enumerate(row_refs):
-                try:
-                    cur = t_lbl.cget("text")
-                    if any(sf in cur for sf in self._SPINNER):
-                        t_lbl.configure(text=f"  {comps[i]}".replace("  ", f"{f}  "))
-                except Exception:
-                    pass
-            self.after(80, tick)
-
-        self.after(80, tick)
-
-        # Background worker — performs all 3 checks
-        results = {}
-
-        def worker():
-            import time
-            ffp, ffpp = get_ffmpeg_paths()
-            results["ffmpeg"] = (bool(ffp and ffpp), ffp, ffpp)
-            time.sleep(0.25)
-
-            mdir = get_base_dir() / "models"
-            yn = (mdir / "face_detection_yunet_2023mar.onnx").is_file()
-            sm = (mdir / "haarcascade_smile.xml").is_file()
-            fc = (mdir / "haarcascade_frontalface_default.xml").is_file()
-            cnt = sum([yn, sm, fc])
-            results["models"] = (cnt == 3, cnt)
-            time.sleep(0.15)
-
-            results["dirs"] = True
-            results["done"] = True
-
-        threading.Thread(target=worker, daemon=True).start()
-
-        def finalize():
-            if not self.winfo_exists():
-                return
-            if self._check_gen != my_gen:
-                return
-            if "done" not in results:
-                self.after(80, finalize)
-                return
-
-            # --- Row 0: FFmpeg & FFprobe ---
-            ffmpeg_ok, fp, fpp = results["ffmpeg"]
-            row, t_lbl, s_lbl = row_refs[0]
-            row.configure(fg_color=BG_CARD_INNER)
-            if ffmpeg_ok:
-                t_lbl.configure(text="✓ FFmpeg & FFprobe: Připraveno", text_color="#22C55E")
-                s_lbl.configure(text=f"Nalezeno v systému: {fp.name if fp else ''}", text_color=TEXT_BODY)
-            else:
-                t_lbl.configure(text="❌ FFmpeg & FFprobe: Chybí", text_color="#EF4444")
-                s_lbl.configure(text="Potřebné pro analýzu audia a střih videa", text_color=TEXT_BODY)
-                ctk.CTkButton(
-                    row, text="⬇️ Stáhnout FFmpeg",
-                    width=135, height=26,
-                    font=ctk.CTkFont(size=11, weight="bold"),
-                    fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
-                    text_color="#FFFFFF", command=self._download_ffmpeg_action
-                ).pack(side="right", padx=12)
-
-            # --- Row 1: Facecam AI modely ---
-            models_ok, models_cnt = results["models"]
-            row, t_lbl, s_lbl = row_refs[1]
-            row.configure(fg_color=BG_CARD_INNER)
-            if models_ok:
-                t_lbl.configure(text="✓ Facecam AI modely: Připraveno (3/3)", text_color="#22C55E")
-                s_lbl.configure(text="YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí", text_color=TEXT_BODY)
-            else:
-                t_lbl.configure(text=f"❌ Facecam AI modely: Nalezeno {models_cnt}/3", text_color="#EF4444")
-                s_lbl.configure(text="Modely chybí pro analýzu webkamery", text_color=TEXT_BODY)
-                ctk.CTkButton(
-                    row, text="⬇️ Stáhnout modely",
-                    width=135, height=26,
-                    font=ctk.CTkFont(size=11, weight="bold"),
-                    fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
-                    text_color="#FFFFFF", command=self._download_models_action
-                ).pack(side="right", padx=12)
-
-            # --- Row 2: Pracovní adresáře ---
-            row, t_lbl, s_lbl = row_refs[2]
-            row.configure(fg_color=BG_CARD_INNER)
-            t_lbl.configure(text="✓ Pracovní adresáře aplikace: V pořádku", text_color="#22C55E")
-            s_lbl.configure(text="models/, assets/, bin/ jsou připraveny k použití", text_color=TEXT_BODY)
-
-        self.after(80, finalize)
-
-    def _download_ffmpeg_action(self):
-        self.parent._prompt_ffmpeg_download()
-        self.after(1500, self._refresh_components)
-
-    def _download_models_action(self):
-        finished = [False]
-        def worker():
-            ensure_ai_models_present()
-            finished[0] = True
-
-        threading.Thread(target=worker, daemon=True).start()
-
-        def poll():
-            if not self.winfo_exists():
-                return
-            if finished[0]:
-                self._refresh_components()
-            else:
-                self.after(200, poll)
-
-        self.after(200, poll)
-
-    def _check_for_updates(self):
-        self.btn_update.configure(state="disabled")
-        self.lbl_update_status.configure(
-            text="🔄 Ověřuji dostupnost nejnovější verze...",
-            text_color=TEXT_BODY
-        )
-        result_holder = {}
-
-        def worker():
-            import time
-            import urllib.request
-            import json
-            time.sleep(0.3)
-
-            new_version_found = None
-            try:
-                req = urllib.request.Request(
-                    "https://api.github.com/repos/matejpesek/autoclip_highlight_cutter/releases/latest",
-                    headers={"User-Agent": "PeciCut-App"}
-                )
-                with urllib.request.urlopen(req, timeout=2.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    tag = data.get("tag_name", "").lstrip("v")
-                    if tag and tag > APP_VERSION:
-                        new_version_found = tag
-            except Exception:
-                pass
-
-            if new_version_found:
-                msg = f"🚀 K dispozici je nová verze: PeciCut v{new_version_found}!"
-                color = ORANGE_ACCENT_TEXT
-            else:
-                msg = f"✓ Používáte nejnovější verzi (PeciCut v{APP_VERSION})."
-                color = "#22C55E"
-
-            result_holder["done"] = (msg, color)
-
-        t = threading.Thread(target=worker, daemon=True)
-        t.start()
-
-        def poll():
-            if not self.winfo_exists():
-                return
-            if "done" in result_holder:
-                msg, color = result_holder["done"]
-                self._on_update_check_done(msg, color)
-            else:
-                self.after(100, poll)
-
-        self.after(100, poll)
-
-    def _on_update_check_done(self, msg: str, color: str):
-        self.btn_update.configure(state="normal")
-        self.lbl_update_status.configure(text=msg, text_color=color)
+        parent._switch_view("settings")
 
 
 class AutoClipApp(ctk.CTk):
+    _SPINNER = ("⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷")
+
     def __init__(self):
         super().__init__()
 
         # Window settings
-        self.title("PeciCut 🎬 Highlight Cutter")
-        self.geometry("940x860")
-        self.minsize(860, 720)
+        self.title("Pecislav Studio • Pro Creator")
+        self.geometry("1060x860")
+        self.minsize(940, 720)
         self.configure(fg_color=BG_WINDOW)
 
         # Application state
@@ -747,12 +363,11 @@ class AutoClipApp(ctk.CTk):
         self.is_processing = False
         self.is_downloading_ffmpeg = False
         self.last_output_path: Optional[Path] = None
-        self.settings_dialog: Optional[SettingsDialog] = None
+        self.settings_dialog = None
+        self.current_view = "pecicut"
 
-        # Build UI
-        self._build_header()
-        self._build_footer()
-        self._build_main_scrollable_container()
+        # Build Studio Shell: Left Sidebar + Right Pages Container
+        self._build_app_shell()
         self._setup_smooth_scrolling()
 
         # Check FFmpeg availability at launch
@@ -850,101 +465,694 @@ class AutoClipApp(ctk.CTk):
     # UI Builder Methods
     # -------------------------------------------------------------------------
 
-    def _build_header(self):
-        """Top banner with PeciCut branding and FFmpeg status/download badge."""
-        header_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=BG_HEADER)
-        header_frame.pack(fill="x", padx=0, pady=0)
+    # -------------------------------------------------------------------------
+    # Pecislav Studio Architecture & Layout (All-in-One Shell)
+    # -------------------------------------------------------------------------
 
-        title_container = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_container.pack(side="left", padx=24, pady=16)
+    def _build_app_shell(self):
+        """Constructs the master layout: Sidebar on the left, Header & Pages on the right."""
+        # Main outer container
+        self.shell_container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        self.shell_container.pack(fill="both", expand=True)
 
-        # Title row using grid for pixel-perfect vertical centering of PRO CREATOR
-        title_row = ctk.CTkFrame(title_container, fg_color="transparent")
-        title_row.pack(anchor="w")
+        # 1. Left Navigation Sidebar
+        self._build_sidebar(self.shell_container)
 
-        # Check for custom logo in assets/logo.png
+        # 2. Right Content Wrapper (Header + Active View + Footer)
+        self.right_wrapper = ctk.CTkFrame(self.shell_container, fg_color="transparent", corner_radius=0)
+        self.right_wrapper.pack(side="left", fill="both", expand=True)
+
+        # Header bar inside right wrapper
+        self._build_header(self.right_wrapper)
+
+        # Container where page views are switched
+        self.pages_container = ctk.CTkFrame(self.right_wrapper, fg_color="transparent", corner_radius=0)
+        self.pages_container.pack(fill="both", expand=True, padx=0, pady=0)
+
+        # Build View 1: PeciCut (Highlight Cutter)
+        self._build_pecicut_view(self.pages_container)
+
+        # Build View 2: Nastavení Studia
+        self._build_settings_view(self.pages_container)
+
+        # Build Bottom Status Footer
+        self._build_footer(self.right_wrapper)
+
+        # Default active module: PeciCut
+        self._switch_view("pecicut")
+
+    def _build_sidebar(self, parent):
+        """Constructs the left modern navigation bar for Pecislav Studio."""
+        self.sidebar_frame = ctk.CTkFrame(parent, width=220, corner_radius=0, fg_color=BG_HEADER)
+        self.sidebar_frame.pack(side="left", fill="y", padx=0, pady=0)
+        self.sidebar_frame.pack_propagate(False)
+
+        # Brand header
+        brand_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        brand_frame.pack(fill="x", padx=16, pady=(18, 12))
+
+        logo_row = ctk.CTkFrame(brand_frame, fg_color="transparent")
+        logo_row.pack(fill="x")
+
+        # Studio logo if present
         assets_dir = get_base_dir() / "assets"
         logo_path = assets_dir / "logo.png"
         self.logo_image = None
-
-        col = 0
         if logo_path.is_file():
             try:
                 from PIL import Image
                 pil_img = Image.open(logo_path)
-                self.logo_image = ctk.CTkImage(
-                    light_image=pil_img,
-                    dark_image=pil_img,
-                    size=(36, 36)
-                )
-                img_lbl = ctk.CTkLabel(title_row, text="", image=self.logo_image)
-                img_lbl.grid(row=0, column=col, padx=(0, 10), sticky="w")
-                col += 1
-                title_text = "PeciCut"
-            except Exception as e:
-                print(f"Chyba při načítání loga: {e}", file=sys.stderr)
-                title_text = "PeciCut"
-        else:
-            title_text = "PeciCut"
+                self.logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(30, 30))
+                ctk.CTkLabel(logo_row, text="", image=self.logo_image).pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
 
-        title_lbl = ctk.CTkLabel(
-            title_row,
-            text=title_text,
-            font=ctk.CTkFont(size=24, weight="bold"),
+        title_box = ctk.CTkFrame(logo_row, fg_color="transparent")
+        title_box.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            title_box,
+            text="Pecislav Studio",
+            font=ctk.CTkFont(size=16, weight="bold"),
             text_color=TEXT_TITLE
-        )
-        title_lbl.grid(row=0, column=col, sticky="w")
-        col += 1
+        ).pack(anchor="w")
 
-        # Perfectly vertically centered "PRO CREATOR" badge
-        tag_lbl = ctk.CTkLabel(
-            title_row,
+        badge_tag = ctk.CTkLabel(
+            brand_frame,
             text="PRO CREATOR",
-            font=ctk.CTkFont(size=10, weight="bold"),
+            font=ctk.CTkFont(size=9, weight="bold"),
             text_color="#0D0E12",
             fg_color=ORANGE_PRIMARY,
-            corner_radius=6,
-            padx=8,
-            pady=3
+            corner_radius=4,
+            padx=6,
+            pady=1
         )
-        tag_lbl.grid(row=0, column=col, padx=(12, 0), sticky="")
-        title_row.grid_rowconfigure(0, weight=1)
+        badge_tag.pack(anchor="w", pady=(6, 0))
 
-        subtitle_lbl = ctk.CTkLabel(
-            title_container,
+        # Divider
+        ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=14, pady=12)
+
+        # Navigation Label
+        ctk.CTkLabel(
+            self.sidebar_frame,
+            text="MODULY",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_MUTED
+        ).pack(anchor="w", padx=18, pady=(4, 6))
+
+        # Nav 1: PeciCut Module
+        self.btn_nav_pecicut = ctk.CTkButton(
+            self.sidebar_frame,
+            text="  🎬  PeciCut",
+            anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=38,
+            corner_radius=8,
+            fg_color=ORANGE_PRIMARY,
+            text_color="#FFFFFF",
+            hover_color=ORANGE_HOVER,
+            command=lambda: self._switch_view("pecicut")
+        )
+        self.btn_nav_pecicut.pack(fill="x", padx=12, pady=4)
+
+        # System Section Label
+        ctk.CTkLabel(
+            self.sidebar_frame,
+            text="SYSTÉM",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_MUTED
+        ).pack(anchor="w", padx=18, pady=(16, 6))
+
+        # Nav 2: Settings Module
+        self.btn_nav_settings = ctk.CTkButton(
+            self.sidebar_frame,
+            text="  ⚙️  Nastavení",
+            anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=38,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=TEXT_TITLE,
+            hover_color=("#D1D5DB", "#20222B"),
+            command=lambda: self._switch_view("settings")
+        )
+        self.btn_nav_settings.pack(fill="x", padx=12, pady=4)
+
+        # Spacer pushes footer to the bottom
+        ctk.CTkFrame(self.sidebar_frame, fg_color="transparent").pack(fill="both", expand=True)
+
+        # Bottom Sidebar Box
+        bottom_box = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        bottom_box.pack(fill="x", padx=14, pady=(0, 16))
+
+        # Interactive FFmpeg health indicator pill
+        self.sidebar_ffmpeg_pill = ctk.CTkButton(
+            bottom_box,
+            text="● FFmpeg: Ověřuji...",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            height=28,
+            corner_radius=6,
+            fg_color=("#E5E7EB", "#1C1E27"),
+            text_color=TEXT_BODY,
+            hover_color=("#D1D5DB", "#2B2E3B"),
+            command=lambda: self._switch_view("settings")
+        )
+        self.sidebar_ffmpeg_pill.pack(fill="x", pady=(0, 8))
+
+        ctk.CTkLabel(
+            bottom_box,
+            text=f"Pecislav Studio v{APP_VERSION}\nby Pecislav",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_MUTED,
+            justify="center"
+        ).pack(fill="x")
+
+    def _build_header(self, parent):
+        """Top banner inside right wrapper displaying active module info."""
+        self.header_frame = ctk.CTkFrame(parent, corner_radius=0, fg_color=BG_HEADER)
+        self.header_frame.pack(fill="x", padx=0, pady=0)
+
+        header_row = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        header_row.pack(fill="x", padx=24, pady=14)
+
+        left_box = ctk.CTkFrame(header_row, fg_color="transparent")
+        left_box.pack(side="left", fill="x", expand=True)
+
+        title_row = ctk.CTkFrame(left_box, fg_color="transparent")
+        title_row.pack(anchor="w")
+
+        self.lbl_header_title = ctk.CTkLabel(
+            title_row,
+            text="🎬 PeciCut",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.lbl_header_title.pack(side="left")
+
+        self.lbl_header_subtitle = ctk.CTkLabel(
+            left_box,
             text="Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY
         )
-        subtitle_lbl.pack(anchor="w", pady=(3, 0))
+        self.lbl_header_subtitle.pack(anchor="w", pady=(3, 0))
 
-        # Settings button in top header
-        self.btn_settings = ctk.CTkButton(
-            header_frame,
-            text="⚙️ Nastavení",
-            font=ctk.CTkFont(size=13, weight="bold"),
+    def _build_pecicut_view(self, parent):
+        """Builds the PeciCut Highlight Cutter view inside the main pages container."""
+        self.page_pecicut = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
+        self.scroll_frame = self.page_pecicut  # Preserve self.scroll_frame for existing callbacks
+
+        self._build_file_section(self.page_pecicut)
+        self._build_audio_track_section(self.page_pecicut)
+        self._build_parameters_section(self.page_pecicut)
+        self._build_export_section(self.page_pecicut)
+        self._build_progress_section(self.page_pecicut)
+
+    def _build_settings_view(self, parent):
+        """Builds the native Settings view for Pecislav Studio."""
+        self.page_settings = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
+
+        # ---------------------------------------------------------------------
+        # 1. Barevný režim aplikace (Obrázky se skosením: Systémová / Bílá / Černá)
+        # ---------------------------------------------------------------------
+        theme_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        theme_card.pack(fill="x", pady=(0, 12))
+
+        ctk.CTkLabel(
+            theme_card,
+            text="🎨 Barevný motiv aplikace",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        ).pack(anchor="w", padx=16, pady=(14, 2))
+
+        ctk.CTkLabel(
+            theme_card,
+            text="Vyberte vizuální styl studia (kliknutím na náhled):",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_BODY
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+
+        themes_row = ctk.CTkFrame(theme_card, fg_color="transparent")
+        themes_row.pack(fill="x", padx=16, pady=(0, 16))
+
+        # 3 theme previews with sharp slanted cuts
+        self.theme_images = {}
+        theme_modes = [
+            ("system", "Systémová"),
+            ("light", "Bílá"),
+            ("dark", "Černá")
+        ]
+        for mode_key, _ in theme_modes:
+            pil_img = create_slanted_theme_image(mode_key, w=125, h=42, r=7)
+            self.theme_images[mode_key] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(125, 42))
+
+        self.theme_buttons = {}
+        for idx, (mode_key, label_text) in enumerate(theme_modes):
+            btn = ctk.CTkButton(
+                themes_row,
+                image=self.theme_images[mode_key],
+                text=label_text,
+                compound="top",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                height=84,
+                corner_radius=10,
+                fg_color=BG_CARD_INNER,
+                text_color=TEXT_TITLE,
+                border_width=1,
+                border_color=BORDER_CARD,
+                hover_color=("#E5E7EB", "#222530"),
+                command=lambda m=mode_key: self._on_theme_select(m)
+            )
+            btn.pack(side="left", fill="x", expand=True, padx=(0 if idx == 0 else 10, 0))
+            self.theme_buttons[mode_key] = btn
+
+        current_mode = ctk.get_appearance_mode().lower()
+        if current_mode not in ["light", "dark"]:
+            current_mode = "system"
+        self._highlight_selected_theme(current_mode)
+
+        # ---------------------------------------------------------------------
+        # 2. Kontrola stažených součástí
+        # ---------------------------------------------------------------------
+        comp_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        comp_card.pack(fill="x", pady=(0, 12))
+
+        comp_hdr = ctk.CTkFrame(comp_card, fg_color="transparent")
+        comp_hdr.pack(fill="x", padx=16, pady=(14, 8))
+
+        ctk.CTkLabel(
+            comp_hdr,
+            text="📦 Kontrola stažených součástí",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        ).pack(side="left")
+
+        btn_recheck = ctk.CTkButton(
+            comp_hdr,
+            text="🔄 Zkontrolovat",
+            width=110,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
             fg_color=("#E5E7EB", "#20222B"),
-            text_color=TEXT_TITLE,
             hover_color=("#D1D5DB", "#2B2E3B"),
-            border_width=1,
-            border_color=BORDER_CARD,
-            corner_radius=8,
-            height=34,
-            width=120,
-            command=self._open_settings_dialog
+            text_color=TEXT_TITLE,
+            command=self._refresh_settings_components
         )
-        self.btn_settings.pack(side="right", padx=24, pady=16)
+        btn_recheck.pack(side="right")
 
-    def _build_main_scrollable_container(self):
-        """Scrollable area containing configuration sections."""
-        self.scroll_frame = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
-        self.scroll_frame.pack(fill="both", expand=True, padx=20, pady=12)
+        self.comp_rows_frame = ctk.CTkFrame(comp_card, fg_color="transparent")
+        self.comp_rows_frame.pack(fill="x", padx=16, pady=(0, 14))
 
-        self._build_file_section(self.scroll_frame)
-        self._build_audio_track_section(self.scroll_frame)
-        self._build_parameters_section(self.scroll_frame)
-        self._build_export_section(self.scroll_frame)
-        self._build_progress_section(self.scroll_frame)
+        # ---------------------------------------------------------------------
+        # 3. Verze aplikace a aktualizace
+        # ---------------------------------------------------------------------
+        ver_card = ctk.CTkFrame(self.page_settings, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        ver_card.pack(fill="x", pady=(0, 12))
+
+        ver_hdr = ctk.CTkFrame(ver_card, fg_color="transparent")
+        ver_hdr.pack(fill="x", padx=16, pady=(14, 8))
+
+        ctk.CTkLabel(
+            ver_hdr,
+            text="🚀 Verze aplikace a aktualizace",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT_TITLE
+        ).pack(side="left")
+
+        self.btn_update = ctk.CTkButton(
+            ver_hdr,
+            text="🔍 Zkontrolovat aktualizace",
+            width=175,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            text_color="#FFFFFF",
+            command=self._check_for_updates
+        )
+        self.btn_update.pack(side="right")
+
+        ver_body = ctk.CTkFrame(ver_card, fg_color="transparent")
+        ver_body.pack(fill="x", padx=16, pady=(0, 16))
+
+        ctk.CTkLabel(
+            ver_body,
+            text=f"Nainstalovaná verze: Pecislav Studio v{APP_VERSION} (by Pecislav)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TEXT_TITLE
+        ).pack(anchor="w")
+
+        self.lbl_update_status = ctk.CTkLabel(
+            ver_body,
+            text="✓ Používáte nejnovější verzi aplikace.",
+            font=ctk.CTkFont(size=11),
+            text_color="#22C55E"
+        )
+        self.lbl_update_status.pack(anchor="w", pady=(4, 0))
+
+        # Render current static state quietly on load (NO animated spinner loop)
+        self._render_components_static()
+
+    def _render_components_static(self):
+        """Renders component rows statically in their current state without running animation/spinner."""
+        if not hasattr(self, "comp_rows_frame") or not self.comp_rows_frame.winfo_exists():
+            return
+
+        for child in self.comp_rows_frame.winfo_children():
+            child.destroy()
+
+        # --- Row 0: FFmpeg & FFprobe ---
+        ffmpeg_path, ffprobe_path = get_ffmpeg_paths()
+        ffmpeg_ok = bool(ffmpeg_path and ffprobe_path)
+        row0 = ctk.CTkFrame(self.comp_rows_frame, fg_color=BG_CARD_INNER, corner_radius=6, border_width=1, border_color=BORDER_CARD)
+        row0.pack(fill="x", pady=4)
+        info0 = ctk.CTkFrame(row0, fg_color="transparent")
+        info0.pack(side="left", fill="x", expand=True, padx=12, pady=8)
+        if ffmpeg_ok:
+            ctk.CTkLabel(info0, text="✓ FFmpeg & FFprobe: Připraveno", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+            ctk.CTkLabel(info0, text=f"Nalezeno v systému: {ffmpeg_path.name if ffmpeg_path else ''}", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+        else:
+            ctk.CTkLabel(info0, text="❌ FFmpeg & FFprobe: Chybí", font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
+            ctk.CTkLabel(info0, text="Potřebné pro analýzu audia a střih videa", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkButton(
+                row0, text="⬇️ Stáhnout FFmpeg",
+                width=135, height=26,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
+                text_color="#FFFFFF", command=self._settings_download_ffmpeg_action
+            ).pack(side="right", padx=12)
+
+        # --- Row 1: Facecam AI modely ---
+        mdir = get_base_dir() / "models"
+        yn = (mdir / "face_detection_yunet_2023mar.onnx").is_file()
+        sm = (mdir / "haarcascade_smile.xml").is_file()
+        fc = (mdir / "haarcascade_frontalface_default.xml").is_file()
+        cnt = sum([yn, sm, fc])
+        models_ok = (cnt == 3)
+        row1 = ctk.CTkFrame(self.comp_rows_frame, fg_color=BG_CARD_INNER, corner_radius=6, border_width=1, border_color=BORDER_CARD)
+        row1.pack(fill="x", pady=4)
+        info1 = ctk.CTkFrame(row1, fg_color="transparent")
+        info1.pack(side="left", fill="x", expand=True, padx=12, pady=8)
+        if models_ok:
+            ctk.CTkLabel(info1, text="✓ Facecam AI modely: Připraveno (3/3)", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+            ctk.CTkLabel(info1, text="YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+        else:
+            ctk.CTkLabel(info1, text=f"❌ Facecam AI modely: Nalezeno {cnt}/3", font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
+            ctk.CTkLabel(info1, text="Modely chybí pro analýzu webkamery", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+            ctk.CTkButton(
+                row1, text="⬇️ Stáhnout modely",
+                width=135, height=26,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
+                text_color="#FFFFFF", command=self._settings_download_models_action
+            ).pack(side="right", padx=12)
+
+        # --- Row 2: Pracovní adresáře ---
+        row2 = ctk.CTkFrame(self.comp_rows_frame, fg_color=BG_CARD_INNER, corner_radius=6, border_width=1, border_color=BORDER_CARD)
+        row2.pack(fill="x", pady=4)
+        info2 = ctk.CTkFrame(row2, fg_color="transparent")
+        info2.pack(side="left", fill="x", expand=True, padx=12, pady=8)
+        ctk.CTkLabel(info2, text="✓ Pracovní adresáře aplikace: V pořádku", font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
+        ctk.CTkLabel(info2, text="models/, assets/, bin/ jsou připraveny k použití", font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+
+    def _switch_view(self, view_name: str):
+        """Switches the active view in Pecislav Studio between PeciCut and Nastavení."""
+        self.current_view = view_name
+        if view_name == "pecicut":
+            self.page_settings.pack_forget()
+            self.page_pecicut.pack(fill="both", expand=True, padx=20, pady=12)
+            self.btn_nav_pecicut.configure(
+                fg_color=ORANGE_PRIMARY,
+                text_color="#FFFFFF",
+                hover_color=ORANGE_HOVER
+            )
+            self.btn_nav_settings.configure(
+                fg_color="transparent",
+                text_color=TEXT_TITLE,
+                hover_color=("#D1D5DB", "#20222B")
+            )
+            self.lbl_header_title.configure(text="🎬 PeciCut")
+            self.lbl_header_subtitle.configure(
+                text="Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu"
+            )
+        elif view_name == "settings":
+            self.page_pecicut.pack_forget()
+            self.page_settings.pack(fill="both", expand=True, padx=20, pady=12)
+            self.btn_nav_settings.configure(
+                fg_color=ORANGE_PRIMARY,
+                text_color="#FFFFFF",
+                hover_color=ORANGE_HOVER
+            )
+            self.btn_nav_pecicut.configure(
+                fg_color="transparent",
+                text_color=TEXT_TITLE,
+                hover_color=("#D1D5DB", "#20222B")
+            )
+            self.lbl_header_title.configure(text="⚙️ Nastavení Studia")
+            self.lbl_header_subtitle.configure(
+                text="Barevný motiv, kontrola stažených součástí a aktualizace Pecislav Studio"
+            )
+
+    def _on_theme_select(self, mode_key: str):
+        if mode_key == "light":
+            ctk.set_appearance_mode("Light")
+        elif mode_key == "dark":
+            ctk.set_appearance_mode("Dark")
+        else:
+            ctk.set_appearance_mode("System")
+        self._highlight_selected_theme(mode_key)
+
+    def _highlight_selected_theme(self, active_mode: str):
+        for mode_key, btn in getattr(self, "theme_buttons", {}).items():
+            if mode_key == active_mode:
+                btn.configure(
+                    border_width=2,
+                    border_color=ORANGE_PRIMARY,
+                    fg_color=("#F3F4F6", "#20222B"),
+                    text_color=ORANGE_PRIMARY
+                )
+            else:
+                btn.configure(
+                    border_width=1,
+                    border_color=BORDER_CARD,
+                    fg_color=BG_CARD_INNER,
+                    text_color=TEXT_BODY
+                )
+
+    def _on_theme_change(self, choice: str):
+        mode_map = {"Systémová": "system", "Bílá": "light", "Černá": "dark"}
+        self._on_theme_select(mode_map.get(choice, "system"))
+
+    def _refresh_settings_components(self):
+        """Animated component check with spinner per row, then green/red results."""
+        if not hasattr(self, "comp_rows_frame") or not self.comp_rows_frame.winfo_exists():
+            return
+
+        self._check_gen = getattr(self, "_check_gen", 0) + 1
+        my_gen = self._check_gen
+
+        # Clear existing rows
+        for child in self.comp_rows_frame.winfo_children():
+            child.destroy()
+
+        loading_bg = ("#E5E7EB", "#1C1E27")
+        comps = [
+            "FFmpeg & FFprobe",
+            "Facecam AI modely",
+            "Pracovní adresáře aplikace",
+        ]
+        row_refs = []
+        for name in comps:
+            row = ctk.CTkFrame(
+                self.comp_rows_frame,
+                fg_color=loading_bg, corner_radius=6,
+                border_width=1, border_color=BORDER_CARD
+            )
+            row.pack(fill="x", pady=4)
+            info = ctk.CTkFrame(row, fg_color="transparent")
+            info.pack(side="left", fill="x", expand=True, padx=12, pady=8)
+            t_lbl = ctk.CTkLabel(
+                info,
+                text=f"⣾  {name}",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=TEXT_MUTED
+            )
+            t_lbl.pack(anchor="w")
+            s_lbl = ctk.CTkLabel(
+                info,
+                text="Kontroluji...",
+                font=ctk.CTkFont(size=11),
+                text_color=TEXT_MUTED
+            )
+            s_lbl.pack(anchor="w")
+            row_refs.append((row, t_lbl, s_lbl))
+
+        spin_idx = [0]
+
+        def tick():
+            if not self.winfo_exists() or self._check_gen != my_gen:
+                return
+            spin_idx[0] = (spin_idx[0] + 1) % len(self._SPINNER)
+            f = self._SPINNER[spin_idx[0]]
+            for i, (_, t_lbl, _) in enumerate(row_refs):
+                try:
+                    cur = t_lbl.cget("text")
+                    if any(sf in cur for sf in self._SPINNER):
+                        t_lbl.configure(text=f"  {comps[i]}".replace("  ", f"{f}  "))
+                except Exception:
+                    pass
+            self.after(80, tick)
+
+        self.after(80, tick)
+
+        results = {}
+
+        def worker():
+            import time
+            ffp, ffpp = get_ffmpeg_paths()
+            results["ffmpeg"] = (bool(ffp and ffpp), ffp, ffpp)
+            time.sleep(0.25)
+
+            mdir = get_base_dir() / "models"
+            yn = (mdir / "face_detection_yunet_2023mar.onnx").is_file()
+            sm = (mdir / "haarcascade_smile.xml").is_file()
+            fc = (mdir / "haarcascade_frontalface_default.xml").is_file()
+            cnt = sum([yn, sm, fc])
+            results["models"] = (cnt == 3, cnt)
+            time.sleep(0.15)
+
+            results["dirs"] = True
+            results["done"] = True
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        def finalize():
+            if not self.winfo_exists() or self._check_gen != my_gen:
+                return
+            if "done" not in results:
+                self.after(80, finalize)
+                return
+
+            # --- Row 0: FFmpeg & FFprobe ---
+            ffmpeg_ok, fp, fpp = results["ffmpeg"]
+            row, t_lbl, s_lbl = row_refs[0]
+            row.configure(fg_color=BG_CARD_INNER)
+            if ffmpeg_ok:
+                t_lbl.configure(text="✓ FFmpeg & FFprobe: Připraveno", text_color="#22C55E")
+                s_lbl.configure(text=f"Nalezeno v systému: {fp.name if fp else ''}", text_color=TEXT_BODY)
+            else:
+                t_lbl.configure(text="❌ FFmpeg & FFprobe: Chybí", text_color="#EF4444")
+                s_lbl.configure(text="Potřebné pro analýzu audia a střih videa", text_color=TEXT_BODY)
+                ctk.CTkButton(
+                    row, text="⬇️ Stáhnout FFmpeg",
+                    width=135, height=26,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
+                    text_color="#FFFFFF", command=self._settings_download_ffmpeg_action
+                ).pack(side="right", padx=12)
+
+            # --- Row 1: Facecam AI modely ---
+            models_ok, models_cnt = results["models"]
+            row, t_lbl, s_lbl = row_refs[1]
+            row.configure(fg_color=BG_CARD_INNER)
+            if models_ok:
+                t_lbl.configure(text="✓ Facecam AI modely: Připraveno (3/3)", text_color="#22C55E")
+                s_lbl.configure(text="YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí", text_color=TEXT_BODY)
+            else:
+                t_lbl.configure(text=f"❌ Facecam AI modely: Nalezeno {models_cnt}/3", text_color="#EF4444")
+                s_lbl.configure(text="Modely chybí pro analýzu webkamery", text_color=TEXT_BODY)
+                ctk.CTkButton(
+                    row, text="⬇️ Stáhnout modely",
+                    width=135, height=26,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
+                    text_color="#FFFFFF", command=self._settings_download_models_action
+                ).pack(side="right", padx=12)
+
+            # --- Row 2: Pracovní adresáře ---
+            row, t_lbl, s_lbl = row_refs[2]
+            row.configure(fg_color=BG_CARD_INNER)
+            t_lbl.configure(text="✓ Pracovní adresáře aplikace: V pořádku", text_color="#22C55E")
+            s_lbl.configure(text="models/, assets/, bin/ jsou připraveny k použití", text_color=TEXT_BODY)
+
+        self.after(80, finalize)
+
+    def _settings_download_ffmpeg_action(self):
+        self._prompt_ffmpeg_download()
+        self.after(1500, self._refresh_settings_components)
+
+    def _settings_download_models_action(self):
+        finished = [False]
+        def worker():
+            ensure_ai_models_present()
+            finished[0] = True
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        def poll():
+            if not self.winfo_exists():
+                return
+            if finished[0]:
+                self._refresh_settings_components()
+            else:
+                self.after(200, poll)
+
+        self.after(200, poll)
+
+    def _check_for_updates(self):
+        self.btn_update.configure(state="disabled")
+        self.lbl_update_status.configure(
+            text="🔄 Ověřuji dostupnost nejnovější verze...",
+            text_color=TEXT_BODY
+        )
+        result_holder = {}
+
+        def worker():
+            import time
+            import urllib.request
+            import json
+            time.sleep(0.3)
+
+            new_version_found = None
+            repos = ["Pecislav/PecislavStudio", "Pecislav/PeciCut"]
+            for repo in repos:
+                try:
+                    req = urllib.request.Request(
+                        f"https://api.github.com/repos/{repo}/releases/latest",
+                        headers={"User-Agent": "PecislavStudio-App"}
+                    )
+                    with urllib.request.urlopen(req, timeout=2.5) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        tag = data.get("tag_name", "").lstrip("v")
+                        if tag and tag > APP_VERSION:
+                            new_version_found = tag
+                            break
+                except Exception:
+                    continue
+
+            if new_version_found:
+                msg = f"🚀 K dispozici je nová verze: Pecislav Studio v{new_version_found}!"
+                color = ORANGE_ACCENT_TEXT
+            else:
+                msg = f"✓ Používáte nejnovější verzi (Pecislav Studio v{APP_VERSION})."
+                color = "#22C55E"
+
+            result_holder["done"] = (msg, color)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+        def poll():
+            if not self.winfo_exists():
+                return
+            if "done" in result_holder:
+                msg, color = result_holder["done"]
+                self.btn_update.configure(state="normal")
+                self.lbl_update_status.configure(text=msg, text_color=color)
+            else:
+                self.after(100, poll)
+
+        self.after(100, poll)
 
     def _build_file_section(self, parent):
         """1. File picker and metadata display."""
@@ -1526,14 +1734,14 @@ class AutoClipApp(ctk.CTk):
         )
         self.lbl_result_check.pack(side="left")
 
-    def _build_footer(self):
+    def _build_footer(self, parent):
         """Bottom status bar."""
-        footer_frame = ctk.CTkFrame(self, height=30, corner_radius=0, fg_color=BG_HEADER)
+        footer_frame = ctk.CTkFrame(parent, height=30, corner_radius=0, fg_color=BG_HEADER)
         footer_frame.pack(fill="x", side="bottom")
 
         self.lbl_footer = ctk.CTkLabel(
             footer_frame,
-            text="PeciCut v1.0 • Creator Edition by Pecislav • Lossless FFmpeg Engine",
+            text="Pecislav Studio v1.0 • Creator Suite by Pecislav • Lossless FFmpeg Engine",
             font=ctk.CTkFont(size=11),
             text_color=TEXT_MUTED
         )
@@ -1544,78 +1752,29 @@ class AutoClipApp(ctk.CTk):
     # -------------------------------------------------------------------------
 
     def _open_settings_dialog(self):
-        """Opens or brings to front the settings dialog, dimming main window."""
-        if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
-            self.settings_dialog._center_and_focus()
-        else:
-            # Dark Canvas overlay inside main window — covers content, reliable on macOS.
-            # Settings dialog is a separate OS window so it's always above this canvas.
-            try:
-                dim = tk.Canvas(self, bg="#09090D", highlightthickness=0)
-                dim.place(x=0, y=0, relwidth=1, relheight=1)
-                # Canvas overrides lift/tkraise as tag_raise (for items) — call global 'raise' directly
-                self.tk.call('raise', dim._w)
-                self._dim_canvas = dim
-            except Exception:
-                self._dim_canvas = None
-            # Block touchpad/mousewheel scroll reaching main scroll frame
-            self._block_main_scroll()
-            # Open settings on top
-            self.settings_dialog = SettingsDialog(self)
-
-    def _block_main_scroll(self):
-        """Patch _check_if_valid_scroll to always return False — blocks all main scroll."""
-        try:
-            self._orig_scroll_check = self.scroll_frame._check_if_valid_scroll
-            self.scroll_frame._check_if_valid_scroll = lambda widget: False
-        except Exception:
-            self._orig_scroll_check = None
-
-    def _close_dim_overlay(self):
-        """Remove dark overlay canvas and restore main scroll."""
-        # Destroy dim canvas
-        dim = getattr(self, "_dim_canvas", None)
-        if dim is not None:
-            try:
-                dim.destroy()
-            except Exception:
-                pass
-            self._dim_canvas = None
-        # Restore scroll validity check
-        try:
-            orig = getattr(self, "_orig_scroll_check", None)
-            if orig is not None:
-                self.scroll_frame._check_if_valid_scroll = orig
-            else:
-                # Fallback: rebuild the check from scratch to be safe
-                def _safe_scroll_check(widget):
-                    try:
-                        if isinstance(widget, ctk.windows.widgets.ctk_scrollbar.CTkScrollbar):
-                            return False
-                    except Exception:
-                        pass
-                    return True
-                self.scroll_frame._check_if_valid_scroll = _safe_scroll_check
-            self._orig_scroll_check = None
-        except Exception:
-            pass
+        """Switches to the integrated Settings view in Pecislav Studio."""
+        self._switch_view("settings")
 
     def _check_ffmpeg_status(self):
-        """Verifies FFmpeg presence and updates the settings button status."""
+        """Verifies FFmpeg presence and updates the sidebar indicator badge."""
         ffmpeg_path, ffprobe_path = get_ffmpeg_paths()
-        if hasattr(self, "btn_settings"):
+        if hasattr(self, "sidebar_ffmpeg_pill"):
             if ffmpeg_path and ffprobe_path:
-                self.btn_settings.configure(
-                    text="⚙️ Nastavení",
-                    border_color=BORDER_CARD
+                self.sidebar_ffmpeg_pill.configure(
+                    text="✓ FFmpeg připraven",
+                    text_color="#22C55E",
+                    border_width=1,
+                    border_color="#22C55E"
                 )
             else:
-                self.btn_settings.configure(
-                    text="⚙️ Nastavení ⚠️",
+                self.sidebar_ffmpeg_pill.configure(
+                    text="⚠️ FFmpeg chybí",
+                    text_color="#EF4444",
+                    border_width=1,
                     border_color="#EF4444"
                 )
-        if hasattr(self, "settings_dialog") and self.settings_dialog is not None and self.settings_dialog.winfo_exists():
-            self.settings_dialog._refresh_components()
+        if hasattr(self, "comp_rows_frame") and self.comp_rows_frame.winfo_exists():
+            self._render_components_static()
 
     def _on_ffmpeg_status_clicked(self):
         """Opens settings when status clicked."""
@@ -1627,9 +1786,9 @@ class AutoClipApp(ctk.CTk):
             return
 
         confirm = messagebox.askyesno(
-            "PeciCut • Automatické stažení FFmpeg",
+            "Pecislav Studio • Automatické stažení FFmpeg",
             "FFmpeg a FFprobe nebyly v systému nalezeny.\n\n"
-            "Chcete, aby PeciCut automaticky stáhl a nastavil FFmpeg do složky aplikace?\n\n"
+            "Chcete, aby Pecislav Studio automaticky stáhl a nastavil FFmpeg do složky aplikace?\n\n"
             "(Vše proběhne na pozadí z oficiálních zdrojů a FFmpeg bude ihned připraven k použití.)"
         )
         if not confirm:
@@ -1640,10 +1799,11 @@ class AutoClipApp(ctk.CTk):
     def _start_ffmpeg_download(self):
         """Launches the automatic download in a background thread."""
         self.is_downloading_ffmpeg = True
-        if hasattr(self, "btn_settings"):
-            self.btn_settings.configure(
+        if hasattr(self, "sidebar_ffmpeg_pill"):
+            self.sidebar_ffmpeg_pill.configure(
                 text="⏳ Stahuji...",
-                border_color=ORANGE_PRIMARY
+                border_color=ORANGE_PRIMARY,
+                text_color=ORANGE_PRIMARY
             )
         self.lbl_status.configure(text="Zahajuji automatické stahování FFmpeg...")
         self.progress_bar.set(0.05)
