@@ -1,4 +1,4 @@
-# PeciCut 🎬✂️
+# PeciCut 🎬
 
 > **Automatický střihač dlouhých záznamů (2–6 hodin) s Facecam AI a detekcí hype reakcí z mikrofonu.**  
 > Multiplatformní desktopová aplikace pro macOS i Windows v moderním Twitch/YouTube Creator stylu (oranžovo-černý design) postavená na CustomTkinter, OpenCV YuNet AI a bezztrátovém FFmpeg enginu.
