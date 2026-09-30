@@ -21,8 +21,12 @@ import cv2
 import numpy as np
 
 
-# Default paths for bundled/cached AI models
-MODELS_DIR = Path(__file__).resolve().parent / "models"
+try:
+    from ffmpeg_utils import get_base_dir
+    MODELS_DIR = get_base_dir() / "models"
+except Exception:
+    MODELS_DIR = Path(__file__).resolve().parent / "models"
+
 YUNET_MODEL_FILE = MODELS_DIR / "face_detection_yunet_2023mar.onnx"
 SMILE_CASCADE_FILE = MODELS_DIR / "haarcascade_smile.xml"
 FACE_CASCADE_FILE = MODELS_DIR / "haarcascade_frontalface_default.xml"

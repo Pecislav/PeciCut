@@ -327,9 +327,13 @@ TRANSLATIONS = {
 
         # Settings Card 7: Version & Updates
         "card_ver_title": "Verze aplikace a aktualizace",
-        "btn_check_updates": " Zkontrolovat aktualizace",
+        "btn_check_updates": "Zkontrolovat aktualizace",
+        "btn_install_update": "Stáhnout a aktualizovat",
         "installed_ver": f"Nainstalovaná verze: Pecislav Studio v{APP_VERSION} (by Pecislav)",
         "update_status_latest": "Používáte nejnovější verzi aplikace.",
+        "dnd_drop_hint": "Přetáhněte video sem (Drag & Drop) nebo vyberte soubor  •  MP4, MKV, MOV, WebM",
+        "dnd_ready_hint": "Velikost: {size} MB  •  Připraveno k analýze  •  Přetažením nahradíte",
+        "btn_change_file": "Změnit video",
     },
     "en": {
         # App Shell & Navigation
@@ -439,9 +443,13 @@ TRANSLATIONS = {
 
         # Settings Card 7: Version & Updates
         "card_ver_title": "Application Version & Updates",
-        "btn_check_updates": " Check for Updates",
+        "btn_check_updates": "Check for Updates",
+        "btn_install_update": "Download & Update",
         "installed_ver": f"Installed version: Pecislav Studio v{APP_VERSION} (by Pecislav)",
         "update_status_latest": "You are running the latest version.",
+        "dnd_drop_hint": "Drag and drop video file here or click Browse  •  MP4, MKV, MOV, WebM",
+        "dnd_ready_hint": "Size: {size} MB  •  Ready for analysis  •  Drag & drop to replace",
+        "btn_change_file": "Change Video",
     }
 }
 
@@ -996,7 +1004,31 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             self._build_ui()
 
 
-class AutoClipApp(ctk.CTk):
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
+    HAS_TKDND = True
+except (ImportError, Exception):
+    HAS_TKDND = False
+    DND_FILES = None
+    TkinterDnD = None
+
+if HAS_TKDND:
+    class BaseApp(ctk.CTk, TkinterDnD.DnDWrapper):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            try:
+                self.TkdndVersion = TkinterDnD._require(self)
+                self._dnd_ready = True
+            except Exception:
+                self._dnd_ready = False
+else:
+    class BaseApp(ctk.CTk):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._dnd_ready = False
+
+
+class AutoClipApp(BaseApp):
     _SPINNER = ("⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷")
 
     def __init__(self):
@@ -1012,11 +1044,21 @@ class AutoClipApp(ctk.CTk):
         if self.saved_theme in ["light", "dark", "system"]:
             ctk.set_appearance_mode(self.saved_theme.capitalize())
 
+        # Windows taskbar grouping & icon registration
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                myappid = "pecislav.studio.creator.1.0"
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            except Exception:
+                pass
+
         # Window settings
         self.title(self.tr("app_title"))
         self.geometry("1080x860")
         self.minsize(1020, 720)
         self.configure(fg_color=BG_WINDOW)
+        self._set_app_icon()
 
         # Application state
         self.current_video_path: Optional[Path] = None
@@ -1041,6 +1083,35 @@ class AutoClipApp(ctk.CTk):
 
         # Check FFmpeg availability at launch
         self._check_ffmpeg_status()
+
+    def _set_app_icon(self):
+        """Loads and sets the window icon across Windows and macOS/Linux."""
+        try:
+            assets_dir = get_base_dir() / "assets"
+            ico_file = assets_dir / "app_icon.ico"
+            png_file = assets_dir / "app_icon.png"
+            logo_file = assets_dir / "logo.png"
+
+            # On Windows, try iconbitmap with .ico first
+            if sys.platform.startswith("win") and ico_file.is_file():
+                try:
+                    self.iconbitmap(str(ico_file))
+                    return
+                except Exception:
+                    pass
+
+            # Cross-platform wm_iconphoto
+            target_png = png_file if png_file.is_file() else (logo_file if logo_file.is_file() else None)
+            if target_png:
+                try:
+                    from PIL import Image, ImageTk
+                    pil_icon = Image.open(target_png)
+                    self._app_window_icon = ImageTk.PhotoImage(pil_icon)
+                    self.wm_iconphoto(True, self._app_window_icon)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def tr(self, key: str, **kwargs) -> str:
         """Retrieves localized text for the given translation key based on self.current_language."""
@@ -1686,10 +1757,13 @@ class AutoClipApp(ctk.CTk):
         )
         self.lbl_ver_title.pack(side="left")
 
+        ver_btns = ctk.CTkFrame(ver_hdr, fg_color="transparent")
+        ver_btns.pack(side="right")
+
         self.btn_update = ctk.CTkButton(
-            ver_hdr,
+            ver_btns,
             text=self.tr("btn_check_updates"),
-            width=175,
+            width=165,
             height=28,
             font=ctk.CTkFont(size=11, weight="bold"),
             fg_color=ORANGE_PRIMARY,
@@ -1697,7 +1771,23 @@ class AutoClipApp(ctk.CTk):
             text_color="#FFFFFF",
             command=self._check_for_updates
         )
-        self.btn_update.pack(side="right")
+        self.btn_update.pack(side="left", padx=(0, 8))
+
+        self.btn_install_update = ctk.CTkButton(
+            ver_btns,
+            text=self.tr("btn_install_update"),
+            width=165,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=BG_CARD_INNER,
+            hover_color=("#E5E7EB", "#252834"),
+            text_color=ORANGE_PRIMARY,
+            border_width=1,
+            border_color=BORDER_CARD,
+            corner_radius=6,
+            command=self._perform_auto_update
+        )
+        self.btn_install_update.pack(side="left")
 
         ver_body = ctk.CTkFrame(ver_card, fg_color="transparent")
         ver_body.pack(fill="x", padx=16, pady=(0, 16))
@@ -1870,15 +1960,23 @@ class AutoClipApp(ctk.CTk):
         if hasattr(self, "lbl_ver_title"):
             self.lbl_ver_title.configure(text=self.tr("card_ver_title"))
             self.btn_update.configure(text=self.tr("btn_check_updates"))
+            if hasattr(self, "btn_install_update"):
+                self.btn_install_update.configure(text=self.tr("btn_install_update"))
             self.lbl_installed_ver.configure(text=self.tr("installed_ver"))
 
         # 4. PeciCut View
         if hasattr(self, "lbl_sec_file"):
             self.lbl_sec_file.configure(text=self.tr("sec_file_title"))
         if hasattr(self, "btn_select_file"):
-            self.btn_select_file.configure(text=self.tr("btn_select_file"))
+            btn_txt = self.tr("btn_change_file") if self.current_video_path else self.tr("btn_select_file")
+            self.btn_select_file.configure(text=btn_txt)
         if hasattr(self, "lbl_file_path") and not self.current_video_path:
             self.lbl_file_path.configure(text=self.tr("no_file_selected"))
+        if hasattr(self, "lbl_dnd_hint"):
+            if not self.current_video_path:
+                self.lbl_dnd_hint.configure(text=self.tr("dnd_drop_hint"), text_color=TEXT_MUTED)
+            else:
+                self._update_drop_zone_labels()
         if hasattr(self, "lbl_meta_info") and not self.video_metadata:
             self.lbl_meta_info.configure(text=self.tr("meta_info_placeholder"))
 
@@ -2207,8 +2305,10 @@ class AutoClipApp(ctk.CTk):
 
     def _check_for_updates(self):
         self.btn_update.configure(state="disabled")
+        if hasattr(self, "btn_install_update"):
+            self.btn_install_update.configure(state="disabled")
         self.lbl_update_status.configure(
-            text=" Ověřuji dostupnost nejnovější verze...",
+            text="Ověřuji dostupnost nejnovější verze...",
             text_color=TEXT_BODY
         )
         result_holder = {}
@@ -2227,7 +2327,7 @@ class AutoClipApp(ctk.CTk):
                         f"https://api.github.com/repos/{repo}/releases/latest",
                         headers={"User-Agent": "PecislavStudio-App"}
                     )
-                    with urllib.request.urlopen(req, timeout=2.5) as resp:
+                    with urllib.request.urlopen(req, timeout=3.0) as resp:
                         data = json.loads(resp.read().decode("utf-8"))
                         tag = data.get("tag_name", "").lstrip("v")
                         if tag and tag > APP_VERSION:
@@ -2239,11 +2339,13 @@ class AutoClipApp(ctk.CTk):
             if new_version_found:
                 msg = f"K dispozici je nová verze: Pecislav Studio v{new_version_found}!"
                 color = ORANGE_ACCENT_TEXT
+                has_update = True
             else:
-                msg = f"Používáte nejnovější verzi (Pecislav Studio v{APP_VERSION})."
+                msg = f"Používáte verzi Pecislav Studio v{APP_VERSION} (poslední stabilní kód na GitHubu)."
                 color = "#22C55E"
+                has_update = False
 
-            result_holder["done"] = (msg, color)
+            result_holder["done"] = (msg, color, has_update)
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -2252,13 +2354,150 @@ class AutoClipApp(ctk.CTk):
             if not self.winfo_exists():
                 return
             if "done" in result_holder:
-                msg, color = result_holder["done"]
+                msg, color, has_update = result_holder["done"]
                 self.btn_update.configure(state="normal")
+                if hasattr(self, "btn_install_update"):
+                    self.btn_install_update.configure(state="normal")
                 self.lbl_update_status.configure(text=msg, text_color=color)
             else:
                 self.after(100, poll)
 
         self.after(100, poll)
+
+    def _perform_auto_update(self):
+        """Downloads updated code from GitHub and replaces the application files safely."""
+        title = "Aktualizace aplikace" if self.current_language == "cs" else "Application Update"
+        msg = ("Opravdu si přejete stáhnout a nainstalovat nejnovější verzi z GitHubu?\n\n"
+               "Vaše nastavení (config.json) i historie projektů zůstanou plně zachovány.") if self.current_language == "cs" else (
+               "Do you want to download and install the latest update from GitHub?\n\n"
+               "Your settings (config.json) and project history will be fully preserved.")
+        if not messagebox.askyesno(title, msg, parent=self):
+            return
+
+        self.btn_update.configure(state="disabled")
+        if hasattr(self, "btn_install_update"):
+            self.btn_install_update.configure(state="disabled")
+
+        self.lbl_update_status.configure(
+            text="Stahuji aktualizaci z GitHubu...",
+            text_color=ORANGE_PRIMARY
+        )
+
+        result_holder = {}
+
+        def update_worker():
+            import zipfile
+            import urllib.request
+
+            app_dir = Path(__file__).parent.resolve()
+
+            # 1. Try Git pull if in a git repository
+            if (app_dir / ".git").is_dir() and shutil.which("git"):
+                try:
+                    res = subprocess.run(
+                        ["git", "pull", "--ff-only"],
+                        cwd=str(app_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=25
+                    )
+                    if res.returncode == 0:
+                        result_holder["done"] = (True, "Aplikace byla úspěšně aktualizována přes Git repository.")
+                        return
+                except Exception:
+                    pass
+
+            # 2. Direct ZIP download from GitHub repository
+            try:
+                zip_url = "https://github.com/Pecislav/PecislavStudio/archive/refs/heads/main.zip"
+                req = urllib.request.Request(
+                    zip_url,
+                    headers={"User-Agent": "PecislavStudio-Updater"}
+                )
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tmp_path = Path(tmp_dir)
+                    zip_file = tmp_path / "update.zip"
+
+                    with urllib.request.urlopen(req, timeout=30) as resp, open(zip_file, "wb") as f_out:
+                        shutil.copyfileobj(resp, f_out)
+
+                    with zipfile.ZipFile(zip_file, "r") as zf:
+                        zf.extractall(tmp_path)
+
+                    extracted = [d for d in tmp_path.iterdir() if d.is_dir() and d != zip_file]
+                    if not extracted:
+                        result_holder["done"] = (False, "Chyba při rozbalení archivu aktualizace.")
+                        return
+
+                    source_dir = extracted[0]
+
+                    # Safe copy: copy files into app_dir, preserving configs & caches
+                    protected = {"config.json", ".git", ".project_cache", "output", "videos", "__pycache__"}
+
+                    for item in source_dir.iterdir():
+                        if item.name in protected:
+                            continue
+                        dest = app_dir / item.name
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(item, dest)
+
+                result_holder["done"] = (True, "Soubory aplikace byly úspěšně aktualizovány na nejnovější verzi.")
+            except Exception as e:
+                result_holder["done"] = (False, f"Stažení selhalo: {e}")
+
+        t = threading.Thread(target=update_worker, daemon=True)
+        t.start()
+
+        def poll_update():
+            if not self.winfo_exists():
+                return
+            if "done" in result_holder:
+                success, note = result_holder["done"]
+                self.btn_update.configure(state="normal")
+                if hasattr(self, "btn_install_update"):
+                    self.btn_install_update.configure(state="normal")
+
+                if success:
+                    self.lbl_update_status.configure(
+                        text="Aktualizace byla úspěšně nainstalována!",
+                        text_color="#22C55E"
+                    )
+                    t_succ = "Aktualizace dokončena" if self.current_language == "cs" else "Update Completed"
+                    m_succ = ("Pecislav Studio bylo úspěšně aktualizováno na nejnovější verzi.\n\n"
+                              "Přejete si aplikaci restartovat nyní pro načtení změn?") if self.current_language == "cs" else (
+                              "Pecislav Studio was successfully updated to the latest version.\n\n"
+                              "Do you want to restart the application now?")
+                    if messagebox.askyesno(t_succ, m_succ, parent=self):
+                        self._restart_app()
+                else:
+                    self.lbl_update_status.configure(
+                        text=f"Aktualizace selhala ({note})",
+                        text_color="#EF4444"
+                    )
+                    messagebox.showerror(
+                        "Chyba aktualizace" if self.current_language == "cs" else "Update Error",
+                        f"Nepodařilo se dokončit automatickou aktualizaci:\n{note}"
+                    )
+            else:
+                self.after(200, poll_update)
+
+        self.after(200, poll_update)
+
+    def _restart_app(self):
+        """Cleanly restarts the application."""
+        try:
+            self.destroy()
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
+        except Exception:
+            try:
+                subprocess.Popen([sys.executable] + sys.argv)
+                sys.exit(0)
+            except Exception:
+                pass
 
     def _build_file_section(self, parent):
         """1. File picker and metadata display."""
@@ -2305,12 +2544,23 @@ class AutoClipApp(ctk.CTk):
         )
         self.btn_open_history.pack(side="right")
 
-        row = ctk.CTkFrame(box, fg_color="transparent")
-        row.pack(fill="x", padx=16, pady=(4, 6))
+        # Interactive Drag & Drop Box
+        self.drop_zone = ctk.CTkFrame(
+            box,
+            fg_color=BG_CARD_INNER,
+            corner_radius=8,
+            border_width=1,
+            border_color=BORDER_CARD
+        )
+        self.drop_zone.pack(fill="x", padx=16, pady=(4, 10))
 
+        drop_inner = ctk.CTkFrame(self.drop_zone, fg_color="transparent")
+        drop_inner.pack(fill="x", padx=14, pady=10)
+
+        btn_txt = self.tr("btn_change_file") if self.current_video_path else self.tr("btn_select_file")
         self.btn_select_file = ctk.CTkButton(
-            row,
-            text=self.tr("btn_select_file"),
+            drop_inner,
+            text=btn_txt,
             command=self._on_select_file,
             width=180,
             height=36,
@@ -2323,14 +2573,39 @@ class AutoClipApp(ctk.CTk):
         )
         self.btn_select_file.pack(side="left")
 
+        path_box = ctk.CTkFrame(drop_inner, fg_color="transparent")
+        path_box.pack(side="left", fill="x", expand=True, padx=(14, 10))
+
         self.lbl_file_path = ctk.CTkLabel(
-            row,
+            path_box,
             text=self.tr("no_file_selected"),
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TEXT_BODY,
             anchor="w"
         )
-        self.lbl_file_path.pack(side="left", fill="x", expand=True, padx=14)
+        self.lbl_file_path.pack(anchor="w")
+
+        self.lbl_dnd_hint = ctk.CTkLabel(
+            path_box,
+            text=self.tr("dnd_drop_hint"),
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        )
+        self.lbl_dnd_hint.pack(anchor="w", pady=(2, 0))
+
+        # Register Drag & Drop targets across the drop zone and the window
+        if getattr(self, "_dnd_ready", False) and DND_FILES is not None:
+            try:
+                targets = [self.drop_zone, drop_inner, path_box, self.lbl_file_path, self.lbl_dnd_hint, box, self]
+                for target in targets:
+                    target.drop_target_register(DND_FILES)
+                    target.dnd_bind('<<Drop>>', self._on_file_drop)
+                    target.dnd_bind('<<DropEnter>>', self._on_drop_enter)
+                    target.dnd_bind('<<DropPosition>>', self._on_drop_position)
+                    target.dnd_bind('<<DropLeave>>', self._on_drop_leave)
+            except Exception:
+                pass
 
         # Video metadata summary card
         self.meta_card = ctk.CTkFrame(box, fg_color=BG_CARD_INNER, corner_radius=8, border_width=1, border_color=BORDER_CARD)
@@ -2344,6 +2619,116 @@ class AutoClipApp(ctk.CTk):
             anchor="w"
         )
         self.lbl_meta_info.pack(padx=12, pady=8, anchor="w")
+
+    def _on_drop_enter(self, event=None):
+        self._dnd_active = True
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.configure(
+                border_color=ORANGE_PRIMARY,
+                border_width=2,
+                fg_color=("#FFE8D6", "#28170B")
+            )
+        if hasattr(self, "lbl_file_path"):
+            t = "Pusťte video soubor zde pro načtení!" if self.current_language == "cs" else "Release video file here to load!"
+            self.lbl_file_path.configure(text=t, text_color=ORANGE_PRIMARY)
+        if hasattr(self, "lbl_dnd_hint"):
+            t_sub = "Aplikace video okamžitě načte a připraví" if self.current_language == "cs" else "App will immediately load and prepare video"
+            self.lbl_dnd_hint.configure(text=t_sub, text_color=TEXT_TITLE)
+        self._animate_drop_pulse(0)
+        return getattr(event, "action", "copy") if event else "copy"
+
+    def _on_drop_position(self, event=None):
+        return getattr(event, "action", "copy") if event else "copy"
+
+    def _animate_drop_pulse(self, step: int):
+        if not getattr(self, "_dnd_active", False) or not hasattr(self, "drop_zone"):
+            return
+        widths = [2, 3, 2, 1]
+        w = widths[step % len(widths)]
+        try:
+            self.drop_zone.configure(border_width=w)
+            self._pulse_job = self.after(160, lambda: self._animate_drop_pulse(step + 1))
+        except Exception:
+            pass
+
+    def _on_drop_leave(self, event=None):
+        self._dnd_active = False
+        if hasattr(self, "_pulse_job") and self._pulse_job:
+            try:
+                self.after_cancel(self._pulse_job)
+            except Exception:
+                pass
+            self._pulse_job = None
+
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.configure(
+                border_color=BORDER_CARD,
+                border_width=1,
+                fg_color=BG_CARD_INNER
+            )
+        self._update_drop_zone_labels()
+        return getattr(event, "action", "copy") if event else "copy"
+
+    def _update_drop_zone_labels(self):
+        if self.current_video_path and self.current_video_path.is_file():
+            v_name = self.current_video_path.name
+            disp_name = v_name if len(v_name) <= 34 else (v_name[:20] + "..." + v_name[-10:])
+            if hasattr(self, "lbl_file_path"):
+                self.lbl_file_path.configure(text=disp_name, text_color=TEXT_TITLE)
+            if hasattr(self, "lbl_dnd_hint"):
+                try:
+                    size_mb = self.current_video_path.stat().st_size / (1024 * 1024)
+                    self.lbl_dnd_hint.configure(
+                        text=self.tr("dnd_ready_hint", size=f"{size_mb:.1f}"),
+                        text_color=TEXT_MUTED
+                    )
+                except Exception:
+                    pass
+        else:
+            if hasattr(self, "lbl_file_path"):
+                self.lbl_file_path.configure(text=self.tr("no_file_selected"), text_color=TEXT_BODY)
+            if hasattr(self, "lbl_dnd_hint"):
+                self.lbl_dnd_hint.configure(text=self.tr("dnd_drop_hint"), text_color=TEXT_MUTED)
+
+    def _on_file_drop(self, event):
+        self._on_drop_leave()
+        data = getattr(event, "data", "")
+        if not data:
+            return getattr(event, "action", "copy") if event else "copy"
+
+        try:
+            candidates = self.tk.splitlist(data)
+        except Exception:
+            candidates = [data.strip()]
+
+        if not candidates:
+            return getattr(event, "action", "copy") if event else "copy"
+
+        candidate = candidates[0].strip()
+        p = Path(candidate)
+        if not p.is_file():
+            messagebox.showwarning(
+                "Neplatný soubor" if self.current_language == "cs" else "Invalid File",
+                f"Přetažený soubor nebyl nalezen:\n{candidate}"
+            )
+            return getattr(event, "action", "copy") if event else "copy"
+
+        ext = p.suffix.lower()
+        valid_exts = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".ts", ".m4v"}
+        if ext not in valid_exts:
+            messagebox.showwarning(
+                "Nepodporovaný formát" if self.current_language == "cs" else "Unsupported Format",
+                f"Soubor '{p.name}' není podporované video.\nPodporované formáty: MP4, MKV, MOV, WebM, AVI."
+            )
+            return getattr(event, "action", "copy") if event else "copy"
+
+        # Success animation flash (green border)
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.configure(border_color="#22C55E", border_width=2)
+            self.after(600, lambda: self.drop_zone.configure(border_color=BORDER_CARD, border_width=1) if hasattr(self, "drop_zone") else None)
+
+        self._load_video_file(str(p))
+        return getattr(event, "action", "copy") if event else "copy"
 
     def _show_dim_overlay(self, title: Optional[str] = None, subtitle: Optional[str] = None):
         """Zobrazí tmavou neprůhlednou vrstvu přes hlavní okno s kartou informující o otevřeném editoru či dialogu."""
@@ -2650,12 +3035,6 @@ class AutoClipApp(ctk.CTk):
     def _clear_history(self):
         self.config["history"] = []
         save_app_config(self.config)
-
-    def _load_video_file(self, path: str):
-        """Načte vybraný soubor videa."""
-        p = Path(path)
-        if p.is_file():
-            self._on_file_selected(str(p))
 
     def _build_audio_track_section(self, parent):
         """2. Audio track dropdown menu."""
@@ -3331,20 +3710,38 @@ class AutoClipApp(ctk.CTk):
     def _on_select_file(self):
         """Opens file dialog for video selection and parses metadata."""
         filetypes = [
-            ("Video soubory (*.mp4, *.mkv, *.mov)", "*.mp4 *.mkv *.mov *.MP4 *.MKV *.MOV"),
+            ("Video soubory (*.mp4, *.mkv, *.mov, *.webm)", "*.mp4 *.mkv *.mov *.webm *.avi *.MP4 *.MKV *.MOV *.WEBM"),
             ("Všechny soubory", "*.*")
         ]
         chosen = filedialog.askopenfilename(
             title="Vyberte video záznam",
             filetypes=filetypes
         )
-        if not chosen:
+        if chosen:
+            self._load_video_file(chosen)
+
+    def _load_video_file(self, path: str):
+        """Načte vybraný nebo přetažený video soubor a spustí extrakci metadat."""
+        video_path = Path(path)
+        if not video_path.is_file():
             return
 
-        video_path = Path(chosen)
         self.current_video_path = video_path
         disp_name = video_path.name if len(video_path.name) <= 34 else (video_path.name[:20] + "..." + video_path.name[-10:])
         self.lbl_file_path.configure(text=disp_name, text_color=TEXT_TITLE)
+
+        if hasattr(self, "btn_select_file"):
+            self.btn_select_file.configure(text=self.tr("btn_change_file"))
+
+        if hasattr(self, "lbl_dnd_hint"):
+            try:
+                size_mb = video_path.stat().st_size / (1024 * 1024)
+                self.lbl_dnd_hint.configure(
+                    text=self.tr("dnd_ready_hint", size=f"{size_mb:.1f}"),
+                    text_color=TEXT_MUTED
+                )
+            except Exception:
+                pass
 
         # Apply default export directory if set in config, otherwise default beside video
         if self.default_export_dir and Path(self.default_export_dir).is_dir():
