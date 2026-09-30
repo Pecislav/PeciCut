@@ -1,0 +1,8 @@
+[tool.pyright]
+exclude = [
+    "build",
+    "dist",
+    ".git",
+    "output",
+    "videos"
+]

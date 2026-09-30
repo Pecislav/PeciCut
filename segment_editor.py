@@ -116,7 +116,19 @@ def _grab_frame(video_path: Path, ts: float, w: int = PREV_W, h: int = PREV_H) -
         "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
     ]
     try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+        sinfo = None
+        if sys.platform.startswith("win"):
+            sinfo = subprocess.STARTUPINFO()
+            sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            sinfo.wShowWindow = 0
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            startupinfo=sinfo,
+            creationflags=cflags,
+        )
         data, _ = p.communicate(timeout=4.0)
         if data:
             return Image.open(io.BytesIO(data)).convert("RGB")
@@ -496,9 +508,13 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
             canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_id, width=e.width))
 
-            # Mousewheel - jen nad listcanvas
+            # Mousewheel - nad listcanvas i celým dialogem
             canvas.bind("<MouseWheel>", self._on_wheel)
             inner.bind("<MouseWheel>", self._on_wheel)
+
+        self.bind("<MouseWheel>", self._on_wheel)
+        self.bind("<Button-4>", self._on_wheel)
+        self.bind("<Button-5>", self._on_wheel)
 
         # Klávesové šipky
         self.bind("<Up>", lambda _: self._kb_nav(-1))
@@ -859,12 +875,20 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         t = "Pozastavit" if self.lang == "cs" else "Pause"
         self._btn_pp.configure(text=t, image=self._icon_pause, fg_color="#DC2626")
 
+        cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+        sinfo = None
+        if sys.platform.startswith("win"):
+            sinfo = subprocess.STARTUPINFO()
+            sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            sinfo.wShowWindow = 0
+
         # Audio: ffplay od navázané pozice
         self._aud_proc = subprocess.Popen(
             [str(ffplay), "-nodisp",
              "-ss", f"{resume_start:.3f}", "-t", f"{resume_dur:.3f}",
              "-autoexit", str(self.video_path)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            startupinfo=sinfo, creationflags=cflags)
 
         # Video: ffmpeg raw RGB pipe od navázané pozice
         self._vid_proc = subprocess.Popen(
@@ -873,7 +897,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
              "-i", str(self.video_path),
              "-vf", f"scale={PREV_W}:{PREV_H},fps={PLAY_FPS}",
              "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            startupinfo=sinfo, creationflags=cflags)
 
         # Reader thread s počátečním offsetem a session ID
         base_offset = self._cur_play_offset
@@ -1021,10 +1046,17 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         if not ffplay:
             return
         try:
+            cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+            sinfo = None
+            if sys.platform.startswith("win"):
+                sinfo = subprocess.STARTUPINFO()
+                sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                sinfo.wShowWindow = 0
             subprocess.Popen(
                 [str(ffplay), "-ss", f"{s0:.2f}", "-t", f"{s1-s0:.2f}",
                  "-autoexit", "-x", "640", "-y", "360", str(self.video_path)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                startupinfo=sinfo, creationflags=cflags)
         except Exception:
             pass
 
@@ -1164,7 +1196,3 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                 pass
             self._pending_play_id = None
         self._stop_play()
-        try:
-            self.unbind_all("<MouseWheel>")
-        except Exception:
-            pass

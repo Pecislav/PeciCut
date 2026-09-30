@@ -56,9 +56,12 @@ def get_video_metadata(video_path: Path | str) -> Dict:
     ]
 
     startupinfo = None
+    cflags = 0
     if platform.system().lower() == "windows":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        cflags = subprocess.CREATE_NO_WINDOW
 
     result = subprocess.run(
         cmd,
@@ -66,6 +69,7 @@ def get_video_metadata(video_path: Path | str) -> Dict:
         stderr=subprocess.PIPE,
         text=True,
         startupinfo=startupinfo,
+        creationflags=cflags,
         check=True
     )
 
@@ -228,15 +232,19 @@ def analyze_audio_stream(
     ])
 
     startupinfo = None
+    cflags = 0
     if platform.system().lower() == "windows":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        cflags = subprocess.CREATE_NO_WINDOW
 
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         startupinfo=startupinfo,
+        creationflags=cflags,
         bufsize=bytes_per_window * 32
     )
 

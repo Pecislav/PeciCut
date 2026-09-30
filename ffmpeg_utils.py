@@ -128,9 +128,12 @@ def verify_binaries() -> Tuple[bool, str]:
 
     try:
         startupinfo = None
+        cflags = 0
         if platform.system().lower() == "windows":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+            cflags = subprocess.CREATE_NO_WINDOW
 
         res = subprocess.run(
             [str(ffmpeg_path), "-version"],
@@ -138,6 +141,7 @@ def verify_binaries() -> Tuple[bool, str]:
             stderr=subprocess.PIPE,
             text=True,
             startupinfo=startupinfo,
+            creationflags=cflags,
             timeout=5,
         )
         if res.returncode != 0:

@@ -206,9 +206,12 @@ def cut_video_lossless(
     concat_list_file = temp_dir / "concat_list.txt"
 
     startupinfo = None
+    cflags = 0
     if platform.system().lower() == "windows":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        cflags = subprocess.CREATE_NO_WINDOW
 
     try:
         # Step 1: Losslessly extract each segment chunk
@@ -243,7 +246,8 @@ def cut_video_lossless(
                 cut_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                startupinfo=startupinfo
+                startupinfo=startupinfo,
+                creationflags=cflags
             )
 
             while process.poll() is None:
@@ -270,7 +274,7 @@ def cut_video_lossless(
                     "-avoid_negative_ts", "make_zero",
                     str(chunk_path)
                 ])
-                fb_process = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
+                fb_process = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo, creationflags=cflags)
                 if fb_process.returncode != 0:
                     raise RuntimeError(f"Chyba při bezztrátovém střihu segmentu {idx}/{total_segments}:\n{stderr_text}")
 
@@ -313,7 +317,8 @@ def cut_video_lossless(
             cwd=str(temp_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            startupinfo=startupinfo
+            startupinfo=startupinfo,
+            creationflags=cflags
         )
 
         while concat_process.poll() is None:

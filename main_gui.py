@@ -1323,17 +1323,45 @@ class AutoClipApp(BaseApp):
         """
         def web_scroll(event):
             try:
-                # 1. If mouse is in a modal dialog (e.g. ProjectHistoryDialog, SegmentReviewDialog),
-                # let that dialog handle its own scrolling.
                 w = getattr(event, "widget", None)
-                if w and hasattr(w, "winfo_toplevel"):
-                    top = w.winfo_toplevel()
-                    if top != self:
-                        return
-                    if isinstance(w, ctk.CTkScrollbar):
-                        return
+                if not w or not hasattr(w, "winfo_toplevel"):
+                    return
 
-                # 2. Determine currently active scrollable page
+                top = w.winfo_toplevel()
+                if not top or not top.winfo_exists():
+                    return
+
+                # Calculate scroll steps
+                if sys.platform.startswith("win"):
+                    steps = -int(event.delta / 1.5)
+                elif sys.platform == "darwin":
+                    steps = -int(event.delta * 2)
+                else:
+                    num = getattr(event, "num", None)
+                    steps = -60 if num == 4 else 60
+
+                # 1. If mouse is in a modal dialog (SegmentReviewDialog or ProjectHistoryDialog)
+                if top != self:
+                    # SegmentReviewDialog with list canvas
+                    list_canvas = getattr(top, "_list_canvas", None)
+                    if list_canvas and list_canvas.winfo_exists():
+                        seg_units = -int(event.delta / 40) if sys.platform.startswith("win") else steps
+                        list_canvas.yview_scroll(seg_units, "units")
+                        return "break"
+
+                    # Dialog with scroll_list (e.g. ProjectHistoryDialog)
+                    scroll_list = getattr(top, "scroll_list", None)
+                    if scroll_list and scroll_list.winfo_exists():
+                        sc = getattr(scroll_list, "_parent_canvas", None)
+                        if sc and sc.winfo_exists():
+                            sc.yview_scroll(steps, "units")
+                            return "break"
+                    return
+
+                if isinstance(w, ctk.CTkScrollbar):
+                    return
+
+                # 2. Determine currently active scrollable page in main window
                 active_page = self.page_pecicut if self.current_view == "pecicut" else getattr(self, "page_settings", None)
                 if not active_page or not active_page.winfo_exists():
                     return
@@ -1344,15 +1372,6 @@ class AutoClipApp(BaseApp):
 
                 # Hide floating tooltips on scroll
                 ModernTooltip.hide_all()
-
-                # 3. Calculate web-like scroll step (~80px on Windows per notch)
-                if sys.platform.startswith("win"):
-                    steps = -int(event.delta / 1.5)
-                elif sys.platform == "darwin":
-                    steps = -int(event.delta * 2)
-                else:
-                    num = getattr(event, "num", None)
-                    steps = -60 if num == 4 else 60
 
                 canvas.yview_scroll(steps, "units")
                 return "break"
@@ -2471,28 +2490,37 @@ class AutoClipApp(BaseApp):
             time.sleep(0.3)
 
             new_version_found = None
+            release_data = None
             repos = ["Pecislav/PecislavStudio", "Pecislav/PeciCut"]
             for repo in repos:
                 try:
+                    # Query releases list (handles both final releases and prereleases/betas)
                     req = urllib.request.Request(
-                        f"https://api.github.com/repos/{repo}/releases/latest",
+                        f"https://api.github.com/repos/{repo}/releases",
                         headers={"User-Agent": "PecislavStudio-App"}
                     )
-                    with urllib.request.urlopen(req, timeout=3.0) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        tag = data.get("tag_name", "").lstrip("v")
-                        if tag and tag > APP_VERSION:
-                            new_version_found = tag
-                            break
+                    with urllib.request.urlopen(req, timeout=4.0) as resp:
+                        releases = json.loads(resp.read().decode("utf-8"))
+                        if releases and isinstance(releases, list):
+                            latest_rel = releases[0]
+                            tag = latest_rel.get("tag_name", "").lstrip("v")
+                            # If tag is strictly higher or different beta
+                            if tag and tag != APP_VERSION.lstrip("v") and tag > APP_VERSION.lstrip("v"):
+                                new_version_found = tag
+                                release_data = latest_rel
+                                break
+                            elif tag and not new_version_found:
+                                release_data = latest_rel
                 except Exception:
                     continue
 
+            self._latest_release_info = release_data
             if new_version_found:
-                msg = f"K dispozici je nová verze: Pecislav Studio v{new_version_found}!"
+                msg = f"K dispozici je nová verze: Pecislav Studio v{new_version_found}!" if self.current_language == "cs" else f"New version available: Pecislav Studio v{new_version_found}!"
                 color = ORANGE_ACCENT_TEXT
                 has_update = True
             else:
-                msg = f"Používáte verzi Pecislav Studio v{APP_VERSION} (poslední stabilní kód na GitHubu)."
+                msg = f"Používáte verzi Pecislav Studio v{APP_VERSION} (aktuální kód na GitHubu)." if self.current_language == "cs" else f"You are running Pecislav Studio v{APP_VERSION} (latest code on GitHub)."
                 color = "#22C55E"
                 has_update = False
 
@@ -2516,7 +2544,7 @@ class AutoClipApp(BaseApp):
         self.after(100, poll)
 
     def _perform_auto_update(self):
-        """Downloads updated code from GitHub and replaces the application files safely."""
+        """Downloads updated code or binary from GitHub and updates the application safely."""
         title = "Aktualizace aplikace" if self.current_language == "cs" else "Application Update"
         msg = ("Opravdu si přejete stáhnout a nainstalovat nejnovější verzi z GitHubu?\n\n"
                "Vaše nastavení (config.json) i historie projektů zůstanou plně zachovány.") if self.current_language == "cs" else (
@@ -2540,16 +2568,68 @@ class AutoClipApp(BaseApp):
             import zipfile
             import urllib.request
 
+            # 1. If running as compiled standalone .exe (PyInstaller frozen)
+            if getattr(sys, "frozen", False):
+                try:
+                    exe_path = Path(sys.executable).resolve()
+                    exe_dir = exe_path.parent
+
+                    download_url = None
+                    rel_info = getattr(self, "_latest_release_info", None)
+                    if rel_info and "assets" in rel_info:
+                        for asset in rel_info["assets"]:
+                            name = asset.get("name", "").lower()
+                            if name.endswith(".exe"):
+                                download_url = asset.get("browser_download_url")
+                                break
+
+                    if not download_url:
+                        download_url = "https://github.com/Pecislav/PecislavStudio/releases/download/v1.0.0-beta/PecislavStudio.exe"
+
+                    req = urllib.request.Request(
+                        download_url,
+                        headers={"User-Agent": "PecislavStudio-Updater"}
+                    )
+
+                    new_exe = exe_dir / f"{exe_path.stem}_new.exe"
+                    with urllib.request.urlopen(req, timeout=180) as resp, open(new_exe, "wb") as f_out:
+                        shutil.copyfileobj(resp, f_out)
+
+                    bat_path = exe_dir / "update_and_restart.bat"
+                    bat_content = f"""@echo off
+timeout /t 1 /nobreak > nul
+move /y "{new_exe.name}" "{exe_path.name}"
+start "" "{exe_path.name}"
+del "%~f0"
+"""
+                    bat_path.write_text(bat_content, encoding="utf-8")
+
+                    result_holder["done"] = (True, "Aplikace byla úspěšně aktualizována na novou verzi.")
+                    self._restart_bat_script = str(bat_path)
+                    return
+                except Exception as e:
+                    result_holder["done"] = (False, f"Aktualizace .exe selhala: {e}")
+                    return
+
+            # 2. If running from source (Python)
             app_dir = Path(__file__).parent.resolve()
 
-            # 1. Try Git pull if in a git repository
+            # Try Git pull if in a git repository
             if (app_dir / ".git").is_dir() and shutil.which("git"):
                 try:
+                    cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+                    sinfo = None
+                    if sys.platform.startswith("win"):
+                        sinfo = subprocess.STARTUPINFO()
+                        sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        sinfo.wShowWindow = 0
                     res = subprocess.run(
                         ["git", "pull", "--ff-only"],
                         cwd=str(app_dir),
                         capture_output=True,
                         text=True,
+                        startupinfo=sinfo,
+                        creationflags=cflags,
                         timeout=25
                     )
                     if res.returncode == 0:
@@ -2558,7 +2638,7 @@ class AutoClipApp(BaseApp):
                 except Exception:
                     pass
 
-            # 2. Direct ZIP download from GitHub repository
+            # Direct ZIP download from GitHub repository
             try:
                 zip_url = "https://github.com/Pecislav/PecislavStudio/archive/refs/heads/main.zip"
                 req = urllib.request.Request(
@@ -2570,7 +2650,7 @@ class AutoClipApp(BaseApp):
                     tmp_path = Path(tmp_dir)
                     zip_file = tmp_path / "update.zip"
 
-                    with urllib.request.urlopen(req, timeout=30) as resp, open(zip_file, "wb") as f_out:
+                    with urllib.request.urlopen(req, timeout=40) as resp, open(zip_file, "wb") as f_out:
                         shutil.copyfileobj(resp, f_out)
 
                     with zipfile.ZipFile(zip_file, "r") as zf:
@@ -2639,13 +2719,23 @@ class AutoClipApp(BaseApp):
 
     def _restart_app(self):
         """Cleanly restarts the application."""
+        bat_script = getattr(self, "_restart_bat_script", None)
+        if bat_script and Path(bat_script).is_file():
+            try:
+                cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+                subprocess.Popen(["cmd.exe", "/c", str(bat_script)], cwd=str(Path(bat_script).parent), creationflags=cflags)
+                self.destroy()
+                sys.exit(0)
+            except Exception:
+                pass
         try:
             self.destroy()
             python = sys.executable
             os.execl(python, python, *sys.argv)
         except Exception:
             try:
-                subprocess.Popen([sys.executable] + sys.argv)
+                cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+                subprocess.Popen([sys.executable] + sys.argv, creationflags=cflags)
                 sys.exit(0)
             except Exception:
                 pass
@@ -3177,7 +3267,8 @@ class AutoClipApp(BaseApp):
             if platform.system() == "Darwin":
                 subprocess.Popen(["open", str(path)])
             elif platform.system() == "Windows":
-                subprocess.Popen(["explorer", str(path)])
+                cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+                subprocess.Popen(["explorer", str(path)], creationflags=cflags)
             else:
                 subprocess.Popen(["xdg-open", str(path)])
         except Exception:
