@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ffmpeg_utils import find_binary
 
@@ -135,7 +135,7 @@ def limit_segments_to_target_duration(
 def calculate_cut_statistics(
     original_duration: float,
     segments: List[Tuple]
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Calculates summary statistics of the cut segments.
     """

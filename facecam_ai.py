@@ -15,7 +15,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -86,8 +86,8 @@ class FacecamAnalyzer:
     def __init__(self, score_threshold: float = 0.6):
         self.score_threshold = score_threshold
         self.detector_yunet: Optional[cv2.FaceDetectorYN] = None
-        self.face_cascade: Optional[cv2.CascadeClassifier] = None
-        self.smile_cascade: Optional[cv2.CascadeClassifier] = None
+        self.face_cascade: Optional[Any] = None
+        self.smile_cascade: Optional[Any] = None
         self.current_input_size = (0, 0)
         self._init_models()
 
@@ -108,13 +108,14 @@ class FacecamAnalyzer:
                 print(f"[FacecamAI] YuNet init error: {e}")
                 self.detector_yunet = None
 
-        if SMILE_CASCADE_FILE.exists():
+        has_cascade = hasattr(cv2, "CascadeClassifier")
+        if has_cascade and SMILE_CASCADE_FILE.exists():
             try:
                 self.smile_cascade = cv2.CascadeClassifier(str(SMILE_CASCADE_FILE))
             except Exception as e:
                 print(f"[FacecamAI] Smile cascade init error: {e}")
 
-        if FACE_CASCADE_FILE.exists():
+        if has_cascade and FACE_CASCADE_FILE.exists():
             try:
                 self.face_cascade = cv2.CascadeClassifier(str(FACE_CASCADE_FILE))
             except Exception as e:
@@ -238,9 +239,33 @@ class FacecamAnalyzer:
         return float(np.clip(0.6 * cavity_score + 0.4 * contrast_score, 0.0, 1.0))
 
     def calculate_smile_score(
-        self, frame_gray: np.ndarray, face_box: Tuple[int, int, int, int]
+        self,
+        frame_gray: np.ndarray,
+        face_box: Tuple[int, int, int, int],
+        landmarks: Optional[Dict[str, Tuple[int, int]]] = None
     ) -> float:
-        """Detects smiles/laughter using Haar smile cascade."""
+        """Detects smiles/laughter using Haar cascade or landmark mouth-width analysis."""
+        # 1. Landmark-based smile detection (works with modern OpenCV YuNet)
+        if landmarks and "right_mouth" in landmarks and "left_mouth" in landmarks:
+            rm = landmarks["right_mouth"]
+            lm = landmarks["left_mouth"]
+            mouth_w = float(np.hypot(lm[0] - rm[0], lm[1] - rm[1]))
+            # Compare mouth width against face width or eye-to-eye distance
+            if "right_eye" in landmarks and "left_eye" in landmarks:
+                re = landmarks["right_eye"]
+                le = landmarks["left_eye"]
+                eye_dist = max(1.0, float(np.hypot(le[0] - re[0], le[1] - re[1])))
+                ratio = mouth_w / eye_dist
+                # Neutral face ratio is typically ~0.80 - 0.90; smiling broadens mouth to > 1.0
+                if ratio > 0.95:
+                    return float(np.clip((ratio - 0.95) / 0.30, 0.0, 1.0))
+            else:
+                _, _, fw, _ = face_box
+                mouth_ratio = mouth_w / max(1.0, float(fw))
+                if mouth_ratio > 0.45:
+                    return float(np.clip((mouth_ratio - 0.45) / 0.20, 0.0, 1.0))
+
+        # 2. Fallback to Haar smile cascade if available
         if self.smile_cascade is None:
             return 0.0
 
@@ -293,7 +318,7 @@ class FacecamAnalyzer:
         mouth_score = self.calculate_mouth_openness_score(gray, face_box, landmarks)
 
         # 2. Smile / laughter score
-        smile_score = self.calculate_smile_score(gray, face_box)
+        smile_score = self.calculate_smile_score(gray, face_box, landmarks)
 
         # 3. Kinetic motion score (head movement / jumping)
         motion_score = 0.0

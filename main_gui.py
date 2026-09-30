@@ -62,7 +62,39 @@ APP_VERSION = "1.0.0"
 # -----------------------------------------------------------------------------
 # Configuration Management & Defaults
 # -----------------------------------------------------------------------------
-CONFIG_FILE = get_base_dir() / "config.json"
+def get_config_file_path() -> Path:
+    """Returns path to config.json, preferring local app folder if writable, falling back to AppData / home."""
+    base_dir = get_base_dir()
+    local_cfg = base_dir / "config.json"
+    if local_cfg.is_file():
+        try:
+            with open(local_cfg, "a"):
+                pass
+            return local_cfg
+        except Exception:
+            pass
+    else:
+        try:
+            test_file = base_dir / ".test_write_cfg"
+            test_file.touch()
+            test_file.unlink()
+            return local_cfg
+        except Exception:
+            pass
+
+    if platform.system().lower() == "windows":
+        app_data = os.getenv("APPDATA")
+        if app_data:
+            cfg_dir = Path(app_data) / "PecislavStudio"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            return cfg_dir / "config.json"
+
+    cfg_dir = Path.home() / ".pecislavstudio"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    return cfg_dir / "config.json"
+
+
+CONFIG_FILE = get_config_file_path()
 DEFAULT_CONFIG = {
     "language": "en",
     "theme": "system",
@@ -74,9 +106,10 @@ DEFAULT_CONFIG = {
 
 def load_app_config() -> dict:
     """Loads configuration from config.json, merged with default values."""
-    if CONFIG_FILE.is_file():
+    cfg_file = get_config_file_path()
+    if cfg_file.is_file():
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
                     cfg = DEFAULT_CONFIG.copy()
@@ -89,8 +122,10 @@ def load_app_config() -> dict:
 
 def save_app_config(config: dict):
     """Saves configuration dictionary to config.json."""
+    cfg_file = get_config_file_path()
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(cfg_file, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[Config] Error saving config.json: {e}")
@@ -1046,7 +1081,7 @@ class AutoClipApp(ctk.CTk):
             text_color=("#4B5563", "#B4B9C7")
         )
         tooltip = ModernTooltip(btn, text=text, recommendation=recommendation)
-        btn._tooltip = tooltip
+        setattr(btn, "_tooltip", tooltip)
         return btn
 
     def _setup_smooth_scrolling(self):
@@ -1075,13 +1110,13 @@ class AutoClipApp(ctk.CTk):
                     pass
             return orig_yview(*args)
 
-        canvas.yview = safe_yview
+        setattr(canvas, "yview", safe_yview)
 
         # Allow smooth scrolling over all widgets (buttons, labels, cards, sliders)
         # except when user is explicitly dragging the scrollbar thumb itself
         def custom_check_valid_scroll(widget):
             try:
-                if isinstance(widget, ctk.windows.widgets.ctk_scrollbar.CTkScrollbar):
+                if isinstance(widget, ctk.CTkScrollbar):
                     return False
             except Exception:
                 pass
@@ -2812,8 +2847,8 @@ class AutoClipApp(ctk.CTk):
 
         self.slider_threshold = ctk.CTkSlider(
             box,
-            from_=-35.0,
-            to=-5.0,
+            from_=-35,
+            to=-5,
             number_of_steps=60,
             command=self._on_threshold_slider_change,
             fg_color=TRACK_COLOR,
@@ -2852,8 +2887,8 @@ class AutoClipApp(ctk.CTk):
 
         self.slider_pad_before = ctk.CTkSlider(
             pad_left,
-            from_=0.0,
-            to=10.0,
+            from_=0,
+            to=10,
             number_of_steps=40,
             command=lambda v: self.lbl_pad_before.configure(text=f"{v:.1f} s"),
             fg_color=TRACK_COLOR,
@@ -2888,8 +2923,8 @@ class AutoClipApp(ctk.CTk):
 
         self.slider_pad_after = ctk.CTkSlider(
             pad_right,
-            from_=0.0,
-            to=10.0,
+            from_=0,
+            to=10,
             number_of_steps=40,
             command=lambda v: self.lbl_pad_after.configure(text=f"{v:.1f} s"),
             fg_color=TRACK_COLOR,
@@ -2931,9 +2966,9 @@ class AutoClipApp(ctk.CTk):
 
         self.slider_gap = ctk.CTkSlider(
             box,
-            from_=0.5,
-            to=6.0,
-            number_of_steps=55,
+            from_=0,
+            to=6,
+            number_of_steps=60,
             command=lambda v: self.lbl_gap_val.configure(text=f"{v:.1f} s"),
             fg_color=TRACK_COLOR,
             progress_color=ORANGE_PRIMARY,
@@ -3281,13 +3316,17 @@ class AutoClipApp(ctk.CTk):
         if "highlighty" in choice.lower():
             self.slider_threshold.set(-14.0)
             self.lbl_threshold_val.configure(text="-14.0 dBFS")
-            if hasattr(self, "q_thresh") and hasattr(self.q_thresh, "_tooltip"):
-                self.q_thresh._tooltip.set_recommendation("-14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS.")
+            if hasattr(self, "q_thresh"):
+                tt = getattr(self.q_thresh, "_tooltip", None)
+                if tt is not None:
+                    tt.set_recommendation("-14.0 dBFS je ideální střed. Pokud máš tichý mikrofon, zkus -16 dBFS.")
         else:
             self.slider_threshold.set(-28.0)
             self.lbl_threshold_val.configure(text="-28.0 dBFS")
-            if hasattr(self, "q_thresh") and hasattr(self.q_thresh, "_tooltip"):
-                self.q_thresh._tooltip.set_recommendation("-28.0 dBFS pro ticho (odstraní mrtvé pauzy bez hlasu).")
+            if hasattr(self, "q_thresh"):
+                tt = getattr(self.q_thresh, "_tooltip", None)
+                if tt is not None:
+                    tt.set_recommendation("-28.0 dBFS pro ticho (odstraní mrtvé pauzy bez hlasu).")
 
     def _on_select_file(self):
         """Opens file dialog for video selection and parses metadata."""
@@ -3424,16 +3463,10 @@ class AutoClipApp(ctk.CTk):
         # Parse target duration
         target_str = self.target_dur_var.get()
         target_duration_sec: Optional[float] = None
-        if "5 minut" in target_str:
-            target_duration_sec = 5.0 * 60.0
-        elif "10 minut" in target_str:
-            target_duration_sec = 10.0 * 60.0
-        elif "15 minut" in target_str:
-            target_duration_sec = 15.0 * 60.0
-        elif "20 minut" in target_str:
-            target_duration_sec = 20.0 * 60.0
-        elif "30 minut" in target_str:
-            target_duration_sec = 30.0 * 60.0
+        import re
+        dur_match = re.search(r"(\d+)\s*min", target_str, re.IGNORECASE)
+        if dur_match:
+            target_duration_sec = float(dur_match.group(1)) * 60.0
 
         # Prepare UI for processing state
         self.is_processing = True
