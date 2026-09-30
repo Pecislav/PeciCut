@@ -254,7 +254,7 @@ def cut_video_lossless(
                 time.sleep(0.05)
 
             if process.returncode != 0:
-                stderr_text = process.stderr.read().decode("utf-8", errors="ignore")
+                stderr_text = process.stderr.read().decode("utf-8", errors="ignore") if process.stderr else ""
                 fallback_cmd = [
                     str(ffmpeg),
                     "-y",
@@ -324,7 +324,7 @@ def cut_video_lossless(
             time.sleep(0.05)
 
         if concat_process.returncode != 0:
-            err_msg = concat_process.stderr.read().decode("utf-8", errors="ignore")
+            err_msg = concat_process.stderr.read().decode("utf-8", errors="ignore") if concat_process.stderr else ""
             raise RuntimeError(f"Chyba při spojování segmentů:\n{err_msg}")
 
         if progress_callback:

@@ -34,6 +34,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+
 from ffmpeg_utils import (
     download_ffmpeg_auto,
     find_binary,
@@ -57,7 +58,7 @@ from video_cutter import (
 )
 from segment_editor import SegmentReviewDialog
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.0-beta"
 
 # -----------------------------------------------------------------------------
 # Configuration Management & Defaults
@@ -769,25 +770,112 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
 
         title = "Historie projektů • Pecislav Studio" if self.current_lang == "cs" else "Project History • Pecislav Studio"
         self.title(title)
-        self.geometry("780x550")
-        self.minsize(680, 440)
-        self.configure(fg_color=BG_CARD)
+        self.geometry("920x620")
+        self.minsize(820, 480)
+        self.configure(fg_color=BG_WINDOW)
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
         self._center()
+        self._set_app_icon()
+        self.after(50, self._apply_windows_titlebar_theme)
         self._build_ui()
+        self._setup_dialog_scrolling()
+
+    def _set_app_icon(self):
+        """Loads and sets the window icon."""
+        try:
+            assets_dir = get_base_dir() / "assets"
+            ico_file = assets_dir / "app_icon.ico"
+            png_file = assets_dir / "app_icon.png"
+
+            if sys.platform.startswith("win") and ico_file.is_file():
+                try:
+                    self.iconbitmap(str(ico_file))
+                    return
+                except Exception:
+                    pass
+
+            target_png = png_file if png_file.is_file() else None
+            if target_png:
+                try:
+                    from PIL import Image, ImageTk
+                    pil_icon = Image.open(target_png)
+                    self._app_window_icon = ImageTk.PhotoImage(pil_icon)
+                    self.wm_iconphoto(True, self._app_window_icon)  # type: ignore
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _apply_windows_titlebar_theme(self):
+        """Sets immersive dark mode or light mode for the Windows title bar via DwmSetWindowAttribute."""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            from ctypes import c_int, byref, sizeof
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            mode = ctk.get_appearance_mode().lower()
+            dark_flag = c_int(1 if mode == "dark" else 0)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(dark_flag), sizeof(dark_flag)
+            )
+            if res != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 19, byref(dark_flag), sizeof(dark_flag)
+                )
+            if mode == "dark":
+                caption_color = c_int(0x00181211)  # #111218
+                text_color = c_int(0x00FFFFFF)
+            else:
+                caption_color = c_int(0x00FAFAF8)
+                text_color = c_int(0x0010181A)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 35, byref(caption_color), sizeof(caption_color)
+            )
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 36, byref(text_color), sizeof(text_color)
+            )
+        except Exception:
+            pass
 
     def _center(self):
         self.update_idletasks()
         try:
-            w, h = 780, 550
+            w, h = 920, 620
             px, py = self.parent_app.winfo_x(), self.parent_app.winfo_y()
             pw, ph = self.parent_app.winfo_width(), self.parent_app.winfo_height()
-            self.geometry(f"{w}x{h}+{px + (pw - w) // 2}+{py + (ph - h) // 2}")
+            self.geometry(f"{w}x{h}+{px + max(0, (pw - w) // 2)}+{py + max(0, (ph - h) // 2)}")
         except Exception:
             pass
+
+    def _setup_dialog_scrolling(self):
+        def _on_wheel(event):
+            try:
+                canvas = getattr(self.scroll_list, "_parent_canvas", None)
+                if not canvas or not canvas.winfo_exists():
+                    return
+                if sys.platform.startswith("win"):
+                    steps = -int(event.delta / 1.5)
+                elif sys.platform == "darwin":
+                    steps = -int(event.delta * 2)
+                else:
+                    num = getattr(event, "num", None)
+                    steps = -60 if num == 4 else 60
+                canvas.yview_scroll(steps, "units")
+                return "break"
+            except Exception:
+                pass
+
+        self.bind("<MouseWheel>", _on_wheel)
+        self.bind("<Button-4>", _on_wheel)
+        self.bind("<Button-5>", _on_wheel)
 
     def _on_close_window(self):
         cb = self.on_close
@@ -804,46 +892,60 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
 
         # Header
         hdr = ctk.CTkFrame(self, fg_color="transparent")
-        hdr.pack(fill="x", padx=20, pady=(18, 12))
+        hdr.pack(fill="x", padx=24, pady=(20, 14))
 
         t_title = "Historie zpracovaných projektů" if self.current_lang == "cs" else "Processed Projects History"
         t_sub = ("Videa, která prošla analýzou a střihem. Kliknutím na projekt se okamžitě vrátíte do editoru momentů."
                  if self.current_lang == "cs"
                  else "Videos processed by PeciCut. Click any project to open the moment editor immediately.")
 
-        lbl_t = ctk.CTkLabel(hdr, text=t_title, font=ctk.CTkFont(size=17, weight="bold"), text_color=TEXT_TITLE)
+        lbl_t = ctk.CTkLabel(hdr, text=t_title, font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_TITLE)
         lbl_t.pack(anchor="w")
         lbl_s = ctk.CTkLabel(hdr, text=t_sub, font=ctk.CTkFont(size=12), text_color=TEXT_MUTED)
-        lbl_s.pack(anchor="w", pady=(2, 0))
+        lbl_s.pack(anchor="w", pady=(3, 0))
 
         # Scrollable container for history items
-        self.scroll_list = ctk.CTkScrollableFrame(self, fg_color=BG_CARD_INNER, corner_radius=10,
-                                                  border_width=1, border_color=BORDER_CARD)
-        self.scroll_list.pack(fill="both", expand=True, padx=20, pady=(0, 14))
+        self.scroll_list = ctk.CTkScrollableFrame(
+            self,
+            fg_color=BG_CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_CARD
+        )
+        self.scroll_list.pack(fill="both", expand=True, padx=24, pady=(0, 16))
 
         history = self.config.get("history", [])
         valid_entries = [h for h in history if h.get("video")]
 
         if not valid_entries:
             empty_box = ctk.CTkFrame(self.scroll_list, fg_color="transparent")
-            empty_box.pack(expand=True, fill="both", pady=60)
+            empty_box.pack(expand=True, fill="both", pady=80)
 
             msg1 = "Zatím žádná historie projektů" if self.current_lang == "cs" else "No project history yet"
             msg2 = ("Až dokončíte analýzu videa nebo střih, projekt se zde automaticky uloží.\n"
                     "Budete se k němu moci kdykoliv vrátit a znovu otevřít editor bez nutnosti re-analyzovat audio."
                     if self.current_lang == "cs"
                     else "Completed video analyses and cuts will be stored here.\nYou can return anytime to review moments without re-analyzing audio.")
-            ctk.CTkLabel(empty_box, text=msg1, font=ctk.CTkFont(size=14, weight="bold"),
-                         text_color=TEXT_TITLE).pack(pady=(0, 6))
-            ctk.CTkLabel(empty_box, text=msg2, font=ctk.CTkFont(size=12),
-                         text_color=TEXT_MUTED, justify="center").pack()
+            ctk.CTkLabel(
+                empty_box,
+                text=msg1,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color=TEXT_TITLE
+            ).pack(pady=(0, 8))
+            ctk.CTkLabel(
+                empty_box,
+                text=msg2,
+                font=ctk.CTkFont(size=12),
+                text_color=TEXT_MUTED,
+                justify="center"
+            ).pack()
         else:
             for item in reversed(valid_entries):
                 self._render_item(item)
 
         # Footer
         footer = ctk.CTkFrame(self, fg_color="transparent")
-        footer.pack(fill="x", padx=20, pady=(0, 16))
+        footer.pack(fill="x", padx=24, pady=(0, 18))
 
         if valid_entries:
             t_clr = "Vymazat celou historii" if self.current_lang == "cs" else "Clear All History"
@@ -851,11 +953,11 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
                 footer,
                 text=t_clr,
                 command=self._on_clear_clicked,
-                height=32,
-                font=ctk.CTkFont(size=11),
+                height=34,
+                font=ctk.CTkFont(size=12),
                 fg_color=BG_CARD_INNER,
-                hover_color=("#E5E7EB", "#252834"),
-                text_color=TEXT_MUTED,
+                hover_color=("#FEE2E2", "#341B1B"),
+                text_color=("#DC2626", "#F87171"),
                 border_width=1,
                 border_color=BORDER_CARD,
                 corner_radius=6
@@ -867,8 +969,8 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             text=t_close,
             command=self._on_close_window,
             height=34,
-            width=100,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            width=110,
+            font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=ORANGE_PRIMARY,
             hover_color=ORANGE_HOVER,
             text_color="#FFFFFF",
@@ -876,12 +978,17 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
         ).pack(side="right")
 
     def _render_item(self, item: Dict):
-        card = ctk.CTkFrame(self.scroll_list, fg_color=BG_CARD, corner_radius=8,
-                            border_width=1, border_color=BORDER_CARD)
-        card.pack(fill="x", padx=8, pady=4)
+        card = ctk.CTkFrame(
+            self.scroll_list,
+            fg_color=BG_CARD_INNER,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_CARD
+        )
+        card.pack(fill="x", padx=8, pady=5)
 
         inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="x", padx=14, pady=10)
+        inner.pack(fill="x", padx=16, pady=12)
 
         video_path_str = item.get("video", "")
         v_path = Path(video_path_str)
@@ -893,12 +1000,73 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
         dur_in = stats.get("original_duration_min", 0.0)
         dur_out = stats.get("output_duration_min", 0.0)
 
+        # 1. Action buttons FIRST on the right to guarantee they never get squeezed or truncated
+        btns = ctk.CTkFrame(inner, fg_color="transparent")
+        btns.pack(side="right", padx=(14, 0))
+
+        # Otevřít v editoru
+        t_edit = "Otevřít v editoru" if self.current_lang == "cs" else "Open in Editor"
+        btn_open = ctk.CTkButton(
+            btns,
+            text=t_edit,
+            command=lambda it=item: self._select_project(it),
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            text_color="#FFFFFF",
+            corner_radius=6,
+            width=140
+        )
+        btn_open.pack(side="left", padx=(0, 8))
+
+        if output_path and Path(output_path).parent.is_dir():
+            t_f = "Složka" if self.current_lang == "cs" else "Folder"
+            btn_folder = ctk.CTkButton(
+                btns,
+                text=t_f,
+                command=lambda p=Path(output_path).parent: self.parent_app._open_folder(p),
+                height=34,
+                width=72,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color=BG_CARD,
+                hover_color=("#E5E7EB", "#252834"),
+                text_color=TEXT_TITLE,
+                border_width=1,
+                border_color=BORDER_CARD,
+                corner_radius=6
+            )
+            btn_folder.pack(side="left", padx=(0, 8))
+
+        t_del = "Smazat" if self.current_lang == "cs" else "Delete"
+        btn_del = ctk.CTkButton(
+            btns,
+            text=t_del,
+            command=lambda it=item: self._confirm_and_delete_item(it),
+            height=34,
+            width=72,
+            font=ctk.CTkFont(size=11),
+            fg_color=BG_CARD,
+            hover_color=("#FEE2E2", "#3B1818"),
+            text_color=("#DC2626", "#F87171"),
+            border_width=1,
+            border_color=BORDER_CARD,
+            corner_radius=6
+        )
+        btn_del.pack(side="left")
+
+        # 2. Left side info fills remaining space cleanly
         left = ctk.CTkFrame(inner, fg_color="transparent")
-        left.pack(side="left", fill="x", expand=True)
+        left.pack(side="left", fill="both", expand=True)
 
         # File name
-        ctk.CTkLabel(left, text=v_path.name, font=ctk.CTkFont(size=13, weight="bold"),
-                     text_color=TEXT_TITLE, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(
+            left,
+            text=v_path.name,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT_TITLE,
+            anchor="w"
+        ).pack(anchor="w")
 
         # Details
         if dur_out > 0.05:
@@ -907,72 +1075,28 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             cut_str = "Připraveno k sestřihu" if self.current_lang == "cs" else "Ready to cut"
 
         if self.current_lang == "cs":
-            det = f"{date_str}  •  {segs} momentů  •  Původní: {dur_in:.1f} min  •  {cut_str}"
+            det = f"{date_str}   •   {segs} momentů   •   Původní: {dur_in:.1f} min   •   {cut_str}"
         else:
-            det = f"{date_str}  •  {segs} clips  •  Original: {dur_in:.1f} min  •  {cut_str}"
-        ctk.CTkLabel(left, text=det, font=ctk.CTkFont(size=11),
-                     text_color=ORANGE_PRIMARY if segs > 0 else TEXT_MUTED, anchor="w").pack(anchor="w", pady=(2, 2))
+            det = f"{date_str}   •   {segs} clips   •   Original: {dur_in:.1f} min   •   {cut_str}"
+        ctk.CTkLabel(
+            left,
+            text=det,
+            font=ctk.CTkFont(size=11),
+            text_color=ORANGE_PRIMARY if segs > 0 else TEXT_MUTED,
+            anchor="w"
+        ).pack(anchor="w", pady=(3, 2))
 
         # Path muted
         disp_path = str(v_path.parent)
-        if len(disp_path) > 55:
-            disp_path = disp_path[:25] + "..." + disp_path[-25:]
-        ctk.CTkLabel(left, text=disp_path, font=ctk.CTkFont(size=10),
-                     text_color=TEXT_MUTED, anchor="w").pack(anchor="w")
-
-        # Action buttons (clean unified horizontal row)
-        btns = ctk.CTkFrame(inner, fg_color="transparent")
-        btns.pack(side="right", padx=(12, 0))
-
-        # Otevřít v editoru
-        t_edit = "Otevřít v editoru" if self.current_lang == "cs" else "Open in Editor"
-        btn_open = ctk.CTkButton(
-            btns,
-            text=t_edit,
-            command=lambda it=item: self._select_project(it),
-            height=32,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=ORANGE_PRIMARY,
-            hover_color=ORANGE_HOVER,
-            text_color="#FFFFFF",
-            corner_radius=6
-        )
-        btn_open.pack(side="left", padx=(0, 6))
-
-        if output_path and Path(output_path).parent.is_dir():
-            t_f = "Složka" if self.current_lang == "cs" else "Folder"
-            btn_folder = ctk.CTkButton(
-                btns,
-                text=t_f,
-                command=lambda p=Path(output_path).parent: self.parent_app._open_folder(p),
-                height=32,
-                width=64,
-                font=ctk.CTkFont(size=11),
-                fg_color=BG_CARD_INNER,
-                hover_color=("#E5E7EB", "#252834"),
-                text_color=TEXT_TITLE,
-                border_width=1,
-                border_color=BORDER_CARD,
-                corner_radius=6
-            )
-            btn_folder.pack(side="left", padx=(0, 6))
-
-        t_del = "Smazat" if self.current_lang == "cs" else "Delete"
-        btn_del = ctk.CTkButton(
-            btns,
-            text=t_del,
-            command=lambda it=item: self._confirm_and_delete_item(it),
-            height=32,
-            width=64,
-            font=ctk.CTkFont(size=11),
-            fg_color=BG_CARD_INNER,
-            hover_color=("#FEE2E2", "#3B1818"),
-            text_color=("#DC2626", "#F87171"),
-            border_width=1,
-            border_color=BORDER_CARD,
-            corner_radius=6
-        )
-        btn_del.pack(side="left")
+        if len(disp_path) > 65:
+            disp_path = disp_path[:30] + "..." + disp_path[-30:]
+        ctk.CTkLabel(
+            left,
+            text=disp_path,
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        ).pack(anchor="w")
 
     def _select_project(self, item: Dict):
         self.on_close = None
@@ -1006,26 +1130,25 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
+    _DnDBase = TkinterDnD.DnDWrapper
     HAS_TKDND = True
 except (ImportError, Exception):
     HAS_TKDND = False
     DND_FILES = None
     TkinterDnD = None
+    _DnDBase = object  # type: ignore
 
-if HAS_TKDND:
-    class BaseApp(ctk.CTk, TkinterDnD.DnDWrapper):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+
+class BaseApp(ctk.CTk, _DnDBase):  # type: ignore
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dnd_ready = False
+        if HAS_TKDND and TkinterDnD is not None:
             try:
-                self.TkdndVersion = TkinterDnD._require(self)
+                self.TkdndVersion = getattr(TkinterDnD, "_require")(self)
                 self._dnd_ready = True
             except Exception:
                 self._dnd_ready = False
-else:
-    class BaseApp(ctk.CTk):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._dnd_ready = False
 
 
 class AutoClipApp(BaseApp):
@@ -1059,6 +1182,7 @@ class AutoClipApp(BaseApp):
         self.minsize(1020, 720)
         self.configure(fg_color=BG_WINDOW)
         self._set_app_icon()
+        self.after(50, self._apply_windows_titlebar_theme)
 
         # Application state
         self.current_video_path: Optional[Path] = None
@@ -1107,9 +1231,45 @@ class AutoClipApp(BaseApp):
                     from PIL import Image, ImageTk
                     pil_icon = Image.open(target_png)
                     self._app_window_icon = ImageTk.PhotoImage(pil_icon)
-                    self.wm_iconphoto(True, self._app_window_icon)
+                    self.wm_iconphoto(True, self._app_window_icon)  # type: ignore
                 except Exception:
                     pass
+        except Exception:
+            pass
+
+    def _apply_windows_titlebar_theme(self):
+        """Sets immersive dark mode or light mode for the Windows title bar via DwmSetWindowAttribute."""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            from ctypes import c_int, byref, sizeof
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            mode = ctk.get_appearance_mode().lower()
+            dark_flag = c_int(1 if mode == "dark" else 0)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(dark_flag), sizeof(dark_flag)
+            )
+            if res != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 19, byref(dark_flag), sizeof(dark_flag)
+                )
+            if mode == "dark":
+                caption_color = c_int(0x00181211)  # #111218 (0x00BBGGRR)
+                text_color = c_int(0x00FFFFFF)
+            else:
+                caption_color = c_int(0x00FAFAF8)  # #F8FAFA
+                text_color = c_int(0x0010181A)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 35, byref(caption_color), sizeof(caption_color)
+            )
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 36, byref(text_color), sizeof(text_color)
+            )
         except Exception:
             pass
 
@@ -1157,43 +1317,52 @@ class AutoClipApp(BaseApp):
 
     def _setup_smooth_scrolling(self):
         """
-        Configures high-performance, smooth 1:1 hardware scrolling for the scrollable frame
-        with collision guards on boundaries to completely prevent stuttering at the end.
+        Configures smooth, fast web-like scrolling across the entire application interface.
+        Allows scrolling everywhere across the page (over cards, buttons, labels, sliders, empty space)
+        at a natural web-like speed (~80px per wheel notch).
         """
-        canvas = self.scroll_frame._parent_canvas
-        orig_yview = canvas.yview
-
-        def safe_yview(*args):
-            if not args:
-                return orig_yview()
-            ModernTooltip.hide_all()
-            if args[0] == "scroll" and len(args) >= 2:
-                try:
-                    count = int(args[1])
-                    top, bottom = orig_yview()
-                    # If at bottom and scrolling down: drop event to avoid stutter/flooding
-                    if count > 0 and bottom >= 0.999:
-                        return "break"
-                    # If at top and scrolling up: drop event
-                    if count < 0 and top <= 0.001:
-                        return "break"
-                except Exception:
-                    pass
-            return orig_yview(*args)
-
-        setattr(canvas, "yview", safe_yview)
-
-        # Allow smooth scrolling over all widgets (buttons, labels, cards, sliders)
-        # except when user is explicitly dragging the scrollbar thumb itself
-        def custom_check_valid_scroll(widget):
+        def web_scroll(event):
             try:
-                if isinstance(widget, ctk.CTkScrollbar):
-                    return False
+                # 1. If mouse is in a modal dialog (e.g. ProjectHistoryDialog, SegmentReviewDialog),
+                # let that dialog handle its own scrolling.
+                w = getattr(event, "widget", None)
+                if w and hasattr(w, "winfo_toplevel"):
+                    top = w.winfo_toplevel()
+                    if top != self:
+                        return
+                    if isinstance(w, ctk.CTkScrollbar):
+                        return
+
+                # 2. Determine currently active scrollable page
+                active_page = self.page_pecicut if self.current_view == "pecicut" else getattr(self, "page_settings", None)
+                if not active_page or not active_page.winfo_exists():
+                    return
+
+                canvas = getattr(active_page, "_parent_canvas", None)
+                if not canvas or not canvas.winfo_exists():
+                    return
+
+                # Hide floating tooltips on scroll
+                ModernTooltip.hide_all()
+
+                # 3. Calculate web-like scroll step (~80px on Windows per notch)
+                if sys.platform.startswith("win"):
+                    steps = -int(event.delta / 1.5)
+                elif sys.platform == "darwin":
+                    steps = -int(event.delta * 2)
+                else:
+                    num = getattr(event, "num", None)
+                    steps = -60 if num == 4 else 60
+
+                canvas.yview_scroll(steps, "units")
+                return "break"
             except Exception:
                 pass
-            return True
 
-        self.scroll_frame._check_if_valid_scroll = custom_check_valid_scroll
+        # Global bind to root window replacing default sluggish CTk scroll
+        self.bind_all("<MouseWheel>", web_scroll, add=False)
+        self.bind_all("<Button-4>", web_scroll, add=False)
+        self.bind_all("<Button-5>", web_scroll, add=False)
 
     def _disable_slider_mousewheel(self, slider: ctk.CTkSlider):
         """
@@ -1259,37 +1428,18 @@ class AutoClipApp(BaseApp):
 
     def _build_sidebar(self, parent):
         """Constructs the left modern navigation bar for Pecislav Studio."""
-        self.sidebar_frame = ctk.CTkFrame(parent, width=220, corner_radius=0, fg_color=BG_HEADER)
+        self.sidebar_frame = ctk.CTkFrame(parent, width=230, corner_radius=0, fg_color=BG_HEADER)
         self.sidebar_frame.pack(side="left", fill="y", padx=0, pady=0)
         self.sidebar_frame.pack_propagate(False)
 
-        # Brand header
+        # Brand header without logo, large prominent typography
         brand_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        brand_frame.pack(fill="x", padx=16, pady=(18, 12))
-
-        logo_row = ctk.CTkFrame(brand_frame, fg_color="transparent")
-        logo_row.pack(fill="x")
-
-        # Studio logo if present
-        assets_dir = get_base_dir() / "assets"
-        logo_path = assets_dir / "logo.png"
-        self.logo_image = None
-        if logo_path.is_file():
-            try:
-                from PIL import Image
-                pil_img = Image.open(logo_path)
-                self.logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(30, 30))
-                ctk.CTkLabel(logo_row, text="", image=self.logo_image).pack(side="left", padx=(0, 8))
-            except Exception:
-                pass
-
-        title_box = ctk.CTkFrame(logo_row, fg_color="transparent")
-        title_box.pack(side="left", fill="x", expand=True)
+        brand_frame.pack(fill="x", padx=18, pady=(22, 14))
 
         ctk.CTkLabel(
-            title_box,
+            brand_frame,
             text="Pecislav Studio",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=20, weight="bold"),
             text_color=TEXT_TITLE
         ).pack(anchor="w")
 
@@ -1300,8 +1450,8 @@ class AutoClipApp(BaseApp):
             text_color="#0D0E12",
             fg_color=ORANGE_PRIMARY,
             corner_radius=4,
-            padx=6,
-            pady=1
+            padx=7,
+            pady=2
         )
         badge_tag.pack(anchor="w", pady=(6, 0))
 
@@ -1312,7 +1462,7 @@ class AutoClipApp(BaseApp):
         self.lbl_sidebar_modules = ctk.CTkLabel(
             self.sidebar_frame,
             text=self.tr("nav_modules"),
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TEXT_MUTED
         )
         self.lbl_sidebar_modules.pack(anchor="w", padx=18, pady=(4, 6))
@@ -1322,8 +1472,8 @@ class AutoClipApp(BaseApp):
             self.sidebar_frame,
             text=self.tr("nav_pecicut"),
             anchor="w",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            height=38,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40,
             corner_radius=8,
             fg_color=ORANGE_PRIMARY,
             text_color="#FFFFFF",
@@ -1336,7 +1486,7 @@ class AutoClipApp(BaseApp):
         self.lbl_sidebar_system = ctk.CTkLabel(
             self.sidebar_frame,
             text=self.tr("nav_system"),
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TEXT_MUTED
         )
         self.lbl_sidebar_system.pack(anchor="w", padx=18, pady=(16, 6))
@@ -1346,8 +1496,8 @@ class AutoClipApp(BaseApp):
             self.sidebar_frame,
             text=self.tr("nav_settings"),
             anchor="w",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            height=38,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40,
             corner_radius=8,
             fg_color="transparent",
             text_color=TEXT_TITLE,
@@ -2125,6 +2275,7 @@ class AutoClipApp(BaseApp):
         self.config["theme"] = mode_key
         save_app_config(self.config)
         self._highlight_selected_theme(mode_key)
+        self.after(50, self._apply_windows_titlebar_theme)
 
     def _highlight_selected_theme(self, active_mode: str):
         for mode_key, btn in getattr(self, "theme_buttons", {}).items():
@@ -3587,7 +3738,7 @@ class AutoClipApp(BaseApp):
 
         self.lbl_footer = ctk.CTkLabel(
             footer_frame,
-            text="Pecislav Studio v1.0 • Creator Suite by Pecislav • Lossless FFmpeg Engine",
+            text=f"Pecislav Studio v{APP_VERSION} • Creator Suite by Pecislav • Lossless FFmpeg Engine",
             font=ctk.CTkFont(size=11),
             text_color=TEXT_MUTED
         )

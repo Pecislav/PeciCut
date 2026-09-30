@@ -179,7 +179,7 @@ def analyze_audio_stream(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     cancel_event: Optional[threading.Event] = None,
     threads: int = 0,
-) -> Optional[List[Tuple[float, float]]]:
+) -> Optional[List[Tuple[float, float, float]]]:
     """
     Streams audio from a specific track using FFmpeg as 16kHz 16-bit mono PCM.
     Calculates RMS and dBFS per window, detects loud/hype segments, expands them
@@ -256,6 +256,9 @@ def analyze_audio_stream(
                 process.kill()
                 process.wait()
                 return None
+
+            if not process.stdout:
+                break
 
             raw_bytes = process.stdout.read(bytes_per_window)
             if not raw_bytes:

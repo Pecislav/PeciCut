@@ -33,7 +33,7 @@ def get_base_dir() -> Path:
     """
     if getattr(sys, "frozen", False):
         if hasattr(sys, "_MEIPASS"):
-            return Path(sys._MEIPASS)
+            return Path(getattr(sys, "_MEIPASS"))
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
 

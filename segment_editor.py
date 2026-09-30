@@ -13,17 +13,19 @@ Architektura pro maximální výkon na notebooku:
 from __future__ import annotations
 
 import io
+import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple
 
-import customtkinter as ctk
 import tkinter as tk
+import customtkinter as ctk
 from PIL import Image, ImageTk
+from ffmpeg_utils import find_binary, get_base_dir
 
-from ffmpeg_utils import find_binary
 
 # ---------------------------------------------------------------------------
 # Barvy (hex stringy, ne tuple - rychlejší pro Canvas)
@@ -217,6 +219,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         self._center()
+        self._set_app_icon()
+        self.after(50, self._apply_windows_titlebar_theme)
         self._build()
         self._update_summary()
 
@@ -224,6 +228,68 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             self.after(80, lambda: self._select(0))
 
     # ------------------------------------------------------------------
+    def _set_app_icon(self):
+        """Loads and sets the window icon."""
+        try:
+            assets_dir = get_base_dir() / "assets"
+            ico_file = assets_dir / "app_icon.ico"
+            png_file = assets_dir / "app_icon.png"
+            logo_file = assets_dir / "logo.png"
+
+            if sys.platform.startswith("win") and ico_file.is_file():
+                try:
+                    self.iconbitmap(str(ico_file))
+                    return
+                except Exception:
+                    pass
+
+            target_png = png_file if png_file.is_file() else (logo_file if logo_file.is_file() else None)
+            if target_png:
+                try:
+                    pil_icon = Image.open(target_png)
+                    self._app_window_icon = ImageTk.PhotoImage(pil_icon)
+                    self.wm_iconphoto(True, self._app_window_icon)  # type: ignore
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _apply_windows_titlebar_theme(self):
+        """Sets immersive dark mode or light mode for the Windows title bar via DwmSetWindowAttribute."""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            from ctypes import c_int, byref, sizeof
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            mode = ctk.get_appearance_mode().lower()
+            dark_flag = c_int(1 if mode == "dark" else 0)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(dark_flag), sizeof(dark_flag)
+            )
+            if res != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 19, byref(dark_flag), sizeof(dark_flag)
+                )
+            if mode == "dark":
+                caption_color = c_int(0x00181211)  # #111218
+                text_color = c_int(0x00FFFFFF)
+            else:
+                caption_color = c_int(0x00FAFAF8)
+                text_color = c_int(0x0010181A)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 35, byref(caption_color), sizeof(caption_color)
+            )
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 36, byref(text_color), sizeof(text_color)
+            )
+        except Exception:
+            pass
+
     def _center(self):
         self.update_idletasks()
         try:
@@ -423,14 +489,16 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._build_canvas_rows()
 
         # Aktualizace scroll region po vykreslení
-        self._inner_frame.bind("<Configure>", lambda e: self._list_canvas.configure(
-            scrollregion=self._list_canvas.bbox("all")))
-        self._list_canvas.bind("<Configure>", lambda e: self._list_canvas.itemconfig(
-            self._inner_frame_id, width=e.width))
+        if self._list_canvas is not None and self._inner_frame is not None:
+            canvas = self._list_canvas
+            inner = self._inner_frame
+            inner_id = self._inner_frame_id
+            inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_id, width=e.width))
 
-        # Mousewheel - jen nad listcanvas
-        self._list_canvas.bind("<MouseWheel>", self._on_wheel)
-        self._inner_frame.bind("<MouseWheel>", self._on_wheel)
+            # Mousewheel - jen nad listcanvas
+            canvas.bind("<MouseWheel>", self._on_wheel)
+            inner.bind("<MouseWheel>", self._on_wheel)
 
         # Klávesové šipky
         self.bind("<Up>", lambda _: self._kb_nav(-1))
@@ -488,9 +556,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                 fg=ORANGE
             ))
 
-            # Kliknutí na řádek -> výběr
+            # Kliknutí na řádek -> výběr a plynulý scroll
             for w in (row_f, inner, lbl):
                 w.bind("<Button-1>", lambda _, idx=i: self._select(idx))
+            for w in (row_f, inner, lbl, chk, pbtn):
+                w.bind("<MouseWheel>", self._on_wheel)
 
             self._row_items.append({
                 "frame": row_f, "inner": inner, "lbl": lbl, "chk": chk,
@@ -646,26 +716,41 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         if not self._row_items or idx >= len(self._row_items):
             return
         try:
+            if self._list_canvas is None or self._inner_frame is None:
+                return
+            canvas = self._list_canvas
+            inner = self._inner_frame
             row_f = self._row_items[idx]["frame"]
             row_f.update_idletasks()
             y = row_f.winfo_y()
-            vh = self._list_canvas.winfo_height()
-            total_h = self._inner_frame.winfo_height()
+            vh = canvas.winfo_height()
+            total_h = inner.winfo_height()
             if total_h <= vh:
                 return
             # Scroll tak, aby byl řádek uprostřed
             center = y + ROW_H // 2
             new_top = max(0, center - vh // 2)
             frac = new_top / total_h
-            self._list_canvas.yview_moveto(frac)
+            canvas.yview_moveto(frac)
         except Exception:
             pass
 
     def _on_wheel(self, event):
         """Scrolluje Canvas seznam pomocí kolečka myši."""
-        # macOS: event.delta je násobek 1 nebo -1 (nebo větší)
-        units = -1 if event.delta > 0 else 1
-        self._list_canvas.yview_scroll(units, "units")
+        try:
+            if self._list_canvas is None:
+                return
+            canvas = self._list_canvas
+            if sys.platform.startswith("win"):
+                units = -int(event.delta / 40)
+            elif sys.platform == "darwin":
+                units = -int(event.delta)
+            else:
+                units = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(units, "units")
+            return "break"
+        except Exception:
+            pass
 
     def _kb_nav(self, delta: int):
         new = max(0, min(self._sel + delta, len(self.segs) - 1))

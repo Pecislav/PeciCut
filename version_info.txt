@@ -23,7 +23,7 @@ VSVersionInfo(
             StringStruct('LegalCopyright', '© 2026 Pecislav. All rights reserved.'),
             StringStruct('OriginalFilename', 'Pecislav Studio.exe'),
             StringStruct('ProductName', 'Pecislav Studio'),
-            StringStruct('ProductVersion', '1.0.0.0')
+            StringStruct('ProductVersion', '1.0.0-beta')
           ]
         )
       ]

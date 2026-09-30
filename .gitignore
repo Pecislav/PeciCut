@@ -11,6 +11,7 @@ ENV/
 build/
 dist/
 *.spec
+!PecislavStudio.spec
 *.app/
 *.exe
 

@@ -112,16 +112,16 @@ class FacecamAnalyzer:
                 print(f"[FacecamAI] YuNet init error: {e}")
                 self.detector_yunet = None
 
-        has_cascade = hasattr(cv2, "CascadeClassifier")
-        if has_cascade and SMILE_CASCADE_FILE.exists():
+        cascade_cls = getattr(cv2, "CascadeClassifier", None)
+        if cascade_cls is not None and SMILE_CASCADE_FILE.exists():
             try:
-                self.smile_cascade = cv2.CascadeClassifier(str(SMILE_CASCADE_FILE))
+                self.smile_cascade = cascade_cls(str(SMILE_CASCADE_FILE))
             except Exception as e:
                 print(f"[FacecamAI] Smile cascade init error: {e}")
 
-        if has_cascade and FACE_CASCADE_FILE.exists():
+        if cascade_cls is not None and FACE_CASCADE_FILE.exists():
             try:
-                self.face_cascade = cv2.CascadeClassifier(str(FACE_CASCADE_FILE))
+                self.face_cascade = cascade_cls(str(FACE_CASCADE_FILE))
             except Exception as e:
                 print(f"[FacecamAI] Face cascade init error: {e}")
 
