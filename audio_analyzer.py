@@ -244,6 +244,8 @@ def analyze_audio_stream(
     current_start: Optional[float] = None
     current_peak_dbfs: float = -120.0
     current_time = 0.0
+    last_active_time = 0.0
+    hangover_sec = 0.4  # vyžaduje 400ms ticha pro rozdělení momentu (spojí slabiky a slova)
 
     last_reported_sec = -1.0
     chunk_count = 0
@@ -291,11 +293,16 @@ def analyze_audio_stream(
                 else:
                     if dbfs > current_peak_dbfs:
                         current_peak_dbfs = dbfs
+                last_active_time = window_end
             else:
                 if current_start is not None:
-                    detected_moments.append((current_start, current_time, current_peak_dbfs))
-                    current_start = None
-                    current_peak_dbfs = -120.0
+                    # Moment se uzavře až po souvislém tichu 0.4s (zabrání rozpadu vět na tisíce mikromomentů)
+                    if (window_end - last_active_time) >= hangover_sec:
+                        active_dur = last_active_time - current_start
+                        if active_dur >= 0.25:  # filtruje náhodná lupnutí mikrofonu pod 250ms
+                            detected_moments.append((current_start, last_active_time, current_peak_dbfs))
+                        current_start = None
+                        current_peak_dbfs = -120.0
 
             current_time = window_end
             chunk_count += 1
@@ -318,7 +325,9 @@ def analyze_audio_stream(
 
         # Close any open moment at the end of the stream
         if current_start is not None:
-            detected_moments.append((current_start, current_time, current_peak_dbfs))
+            active_dur = last_active_time - current_start
+            if active_dur >= 0.25:
+                detected_moments.append((current_start, last_active_time, current_peak_dbfs))
 
         process.wait()
 

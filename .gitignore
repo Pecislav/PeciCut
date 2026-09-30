@@ -44,4 +44,5 @@ config.json
 *.local.json
 cache/
 peci_cache/
+.project_cache/
 

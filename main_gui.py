@@ -7,7 +7,7 @@ Modules:
 - Recommended initial values clearly stated under every single setting.
 - Interactive question mark (?) help buttons explaining each feature in plain language.
 - Pixel-perfect vertical centering of the "PRO CREATOR" badge.
-- 1-click automatic FFmpeg downloader & status indicator with ❌ / ✓ feedback.
+- 1-click automatic FFmpeg downloader & status indicator with X / feedback.
 - Clean dropdown selectors for mode, duration, and output format.
 - Sliders protected against accidental mousewheel/trackpad scrolling.
 - Branded as Pecislav Studio by Pecislav with custom Twitch/YouTube creator theme.
@@ -15,15 +15,19 @@ Modules:
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -63,7 +67,8 @@ DEFAULT_CONFIG = {
     "language": "en",
     "theme": "system",
     "default_export_dir": "",
-    "auto_open_folder": True
+    "auto_open_folder": True,
+    "history": []          # list of {"video": str, "output": str, "date": str, "stats": dict}
 }
 
 
@@ -184,20 +189,21 @@ TRANSLATIONS = {
         "app_title": "Pecislav Studio • Pro Creator",
         "brand_title": "Pecislav Studio",
         "nav_modules": "MODULY",
-        "nav_pecicut": "  🎬  PeciCut",
+        "nav_pecicut": "  PeciCut",
+        "nav_history": "  Historie projektů",
         "nav_system": "SYSTÉM",
-        "nav_settings": "  ⚙️  Nastavení",
-        "header_pecicut_title": "🎬 PeciCut",
+        "nav_settings": "  Nastavení",
+        "header_pecicut_title": "PeciCut",
         "header_pecicut_subtitle": "Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
-        "header_settings_title": "⚙️ Nastavení Studia",
+        "header_settings_title": "Nastavení Studia",
         "header_settings_subtitle": "Barevný motiv, jazyk, export a aktualizace Pecislav Studio",
         "footer_text": f"Pecislav Studio v{APP_VERSION} • Creator Suite by Pecislav • Lossless FFmpeg Engine",
 
         # PeciCut Section 1: File selection
         "sec_file_title": "1. Výběr zdrojového video záznamu",
-        "btn_select_file": "📁 Procházet soubory...",
+        "btn_select_file": "Procházet soubory...",
         "no_file_selected": "Zatím nebyl vybrán žádný soubor (.mp4, .mkv, .mov)",
-        "meta_info_placeholder": "ℹ️ Po výběru souboru se zde zobrazí délka, FPS, rozlišení a nalezené audio stopy.",
+        "meta_info_placeholder": "Po výběru souboru se zde zobrazí délka, FPS, rozlišení a nalezené audio stopy.",
 
         # PeciCut Section 2: Audio Track
         "sec_audio_title": "2. Výběr audio stopy pro analýzu (Mikrofon / Hlas)",
@@ -205,14 +211,14 @@ TRANSLATIONS = {
 
         # PeciCut Section 3: Detection Parameters
         "sec_params_title": "3. Režim detekce a parametry střihu",
-        "mode_highlights": "🔥 Akční highlighty (výkřiky, smích, hlasité momenty)",
-        "mode_nosilence": "✂️ Celý stream bez hluchých míst (odstranění ticha)",
+        "mode_highlights": "Akcni highlighty (výkřiky, smích, hlasité momenty)",
+        "mode_nosilence": "Celý stream bez hluchých míst (odstranění ticha)",
         "lbl_target_dur_title": "Cílová maximální délka sestřihu:",
         "lbl_threshold": "Práh hlasitosti / řevu (dBFS):",
         "lbl_pad_before": "Délka náběhu před momentem (Padding Before):",
         "lbl_pad_after": "Délka doznívání po momentu (Padding After):",
         "lbl_gap": "Minimální ticho pro rozdělení (Min Gap):",
-        "chk_facecam": "🤖 Facecam AI (Analýza výrazu obličeje a smíchu z webkamery)",
+        "chk_facecam": "Facecam AI (Analýza výrazu obličeje a smíchu z webkamery)",
         "sub_facecam": "Kombinuje audio analýzu s počítačovým viděním — prioritizuje nejlepší reakce obličeje, smích a leknutí.",
 
         # PeciCut Section 4: Export
@@ -220,95 +226,96 @@ TRANSLATIONS = {
         "btn_change_out": "Změnit výstupní složku...",
         "out_dir_default": "Výstup: Automaticky ve složce se zdrojovým videem",
         "out_dir_custom": "Výstup: ",
-        "chk_review_segments": "🎬 Před exportem otevřít editor momentů a náhledy",
+        "chk_review_segments": "Před exportem otevřít editor momentů a náhledy",
         "sub_review_segments": "Umožní přehrát nalezené momenty a ručně upravit, co se má sestříhat.",
 
         # PeciCut Section 5: Progress & Results
-        "btn_process": "🚀 Spustit zpracování záznamu",
+        "btn_process": "Spustit zpracování záznamu",
         "btn_cancel": "Zrušit",
         "status_ready": "Video připraveno. Nastavte parametry a klikněte na 'Spustit zpracování'.",
         "status_waiting_editor": "Čekám na schválení momentů v editoru...",
-        "btn_open_folder": "📂 Otevřít složku s výsledkem",
-        "lbl_done": "✓ Hotovo!",
+        "btn_open_folder": "Otevřít složku s výsledkem",
+        "lbl_done": "Hotovo!",
 
         # Settings Card 1: Themes
-        "card_theme_title": "🎨 Barevný motiv aplikace",
+        "card_theme_title": " Barevný motiv aplikace",
         "card_theme_sub": "Vyberte vizuální styl studia (kliknutím na náhled):",
         "theme_system": "Systémová",
         "theme_light": "Bílá",
         "theme_dark": "Černá",
 
         # Settings Card 2: Language
-        "card_lang_title": "🌍 Jazyk aplikace / Language",
+        "card_lang_title": " Jazyk aplikace / Language",
         "card_lang_sub": "Zvolte preferovaný jazyk uživatelského rozhraní Pecislav Studio:",
         "lbl_select_language": "Aktivní jazyk rozhraní:",
 
         # Settings Card 3: Default Export & Folder Behavior
-        "card_export_title": "📁 Výchozí export a chování složek",
+        "card_export_title": "Výchozí export a chování složek",
         "card_export_sub": "Nastavte kam se mají ukládat hotové sestřihy a chování po dokončení:",
         "lbl_default_folder": "Výchozí složka pro export:",
         "lbl_folder_beside": "(Automaticky ve složce se zdrojovým videem)",
-        "btn_set_export_folder": "📁 Změnit složku...",
-        "btn_reset_export_folder": "↺ Resetovat",
+        "btn_set_export_folder": "Změnit složku...",
+        "btn_reset_export_folder": " Resetovat",
         "chk_auto_open_folder": "Automaticky otevřít cílovou složku po dokončení střihu",
 
         # Settings Card 4: Performance / CPU
-        "card_perf_title": "⚡ Výkon a vytížení procesoru (CPU)",
+        "card_perf_title": " Výkon a vytížení procesoru (CPU)",
         "card_perf_sub": "Přizpůsobte vytížení procesoru při renderování a AI analýze:",
-        "perf_cores_detected": "🖥️ Detekováno: {cores} jader CPU",
-        "perf_max_opt": "🚀 Maximální výkon (všechna jádra)",
-        "perf_balanced_opt": "🎮 Vyvážený / Herní režim (šetří CPU)",
+        "perf_cores_detected": "Detekováno: {cores} jader CPU",
+        "perf_max_opt": "Maximální výkon (všechna jádra)",
+        "perf_balanced_opt": "Vyvážený / Herní režim (šetří CPU)",
         "perf_max_desc": "• Využívá 100% dostupných CPU jader pro nejrychlejší možný střih a detekci obličeje.",
         "perf_balanced_desc": "• Omezuje vytížení na polovinu jader ({half_cores}). Šetří procesor a grafiku pro plynulé hraní či streamování na Twitch/YouTube.",
 
         # Settings Card 5: Maintenance / Cache
-        "card_cache_title": "🧹 Údržba a dočasná data (Cache)",
+        "card_cache_title": " Údržba a dočasná data (Cache)",
         "card_cache_sub": "Vyčistěte dočasné video segmenty, fragmenty a mezipaměť po předchozích střizích:",
         "lbl_cache_heading": "Stav dočasné mezipaměti:",
-        "btn_clear_cache": "🗑️ Promazat mezipaměť",
-        "cache_clean": "✓ Mezipaměť je čistá (0.0 MB)",
+        "btn_clear_cache": "Promazat mezipaměť",
+        "cache_clean": "Mezipaměť je čistá (0.0 MB)",
         "cache_found": "Nalezeno {size_mb} MB dočasných dat",
-        "cache_cleared_msg": "✓ Mezipaměť byla úspěšně promazána (uvolněno {freed_mb} MB).",
+        "cache_cleared_msg": "Mezipaměť byla úspěšně promazána (uvolněno {freed_mb} MB).",
 
         # Settings Card 6: Components
-        "card_comp_title": "📦 Kontrola stažených součástí",
-        "btn_recheck": "🔄 Zkontrolovat",
-        "comp_ffmpeg_ok": "✓ FFmpeg & FFprobe: Připraveno",
-        "comp_ffmpeg_fail": "❌ FFmpeg & FFprobe: Chybí",
+        "card_comp_title": " Kontrola stažených součástí",
+        "btn_recheck": " Zkontrolovat",
+        "comp_ffmpeg_ok": "FFmpeg & FFprobe: Připraveno",
+        "comp_ffmpeg_fail": "X FFmpeg & FFprobe: Chybí",
         "comp_ffmpeg_desc_ok": "Nalezeno v systému: {name}",
         "comp_ffmpeg_desc_fail": "Potřebné pro analýzu audia a střih videa",
-        "comp_models_ok": "✓ Facecam AI modely: Připraveno (3/3)",
-        "comp_models_fail": "❌ Facecam AI modely: Nalezeno {cnt}/3",
+        "comp_models_ok": "Facecam AI modely: Připraveno (3/3)",
+        "comp_models_fail": "X Facecam AI modely: Nalezeno {cnt}/3",
         "comp_models_desc_ok": "YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí",
         "comp_models_desc_fail": "Modely chybí pro analýzu webkamery",
-        "comp_dirs_ok": "✓ Pracovní adresáře aplikace: V pořádku",
+        "comp_dirs_ok": "Pracovní adresáře aplikace: V pořádku",
         "comp_dirs_desc": "models/, assets/, bin/ jsou připraveny k použití",
 
         # Settings Card 7: Version & Updates
-        "card_ver_title": "🚀 Verze aplikace a aktualizace",
-        "btn_check_updates": "🔍 Zkontrolovat aktualizace",
+        "card_ver_title": "Verze aplikace a aktualizace",
+        "btn_check_updates": " Zkontrolovat aktualizace",
         "installed_ver": f"Nainstalovaná verze: Pecislav Studio v{APP_VERSION} (by Pecislav)",
-        "update_status_latest": "✓ Používáte nejnovější verzi aplikace.",
+        "update_status_latest": "Používáte nejnovější verzi aplikace.",
     },
     "en": {
         # App Shell & Navigation
         "app_title": "Pecislav Studio • Pro Creator",
         "brand_title": "Pecislav Studio",
         "nav_modules": "MODULES",
-        "nav_pecicut": "  🎬  PeciCut",
+        "nav_pecicut": "  PeciCut",
+        "nav_history": "  Project History",
         "nav_system": "SYSTEM",
-        "nav_settings": "  ⚙️  Settings",
-        "header_pecicut_title": "🎬 PeciCut",
+        "nav_settings": "  Settings",
+        "header_pecicut_title": "PeciCut",
         "header_pecicut_subtitle": "Automated highlight cutter for long Twitch & YouTube recordings (2-6h) based on mic audio",
-        "header_settings_title": "⚙️ Studio Settings",
+        "header_settings_title": "Studio Settings",
         "header_settings_subtitle": "Color theme, language, export and updates for Pecislav Studio",
         "footer_text": f"Pecislav Studio v{APP_VERSION} • Creator Suite by Pecislav • Lossless FFmpeg Engine",
 
         # PeciCut Section 1: File selection
         "sec_file_title": "1. Select Source Video Recording",
-        "btn_select_file": "📁 Browse files...",
+        "btn_select_file": "Browse files...",
         "no_file_selected": "No file selected yet (.mp4, .mkv, .mov)",
-        "meta_info_placeholder": "ℹ️ File duration, FPS, resolution, and audio tracks will appear here after selection.",
+        "meta_info_placeholder": "File duration, FPS, resolution, and audio tracks will appear here after selection.",
 
         # PeciCut Section 2: Audio Track
         "sec_audio_title": "2. Select Audio Track for Analysis (Microphone / Voice)",
@@ -316,14 +323,14 @@ TRANSLATIONS = {
 
         # PeciCut Section 3: Detection Parameters
         "sec_params_title": "3. Detection Mode & Cutting Parameters",
-        "mode_highlights": "🔥 Action Highlights (screams, laughter, hype moments)",
-        "mode_nosilence": "✂️ Full Stream without Silence (remove quiet pauses)",
+        "mode_highlights": "Action Highlights (screams, laughter, hype moments)",
+        "mode_nosilence": "Full Stream without Silence (remove quiet pauses)",
         "lbl_target_dur_title": "Target maximum video duration:",
         "lbl_threshold": "Loudness / Scream threshold (dBFS):",
         "lbl_pad_before": "Padding before highlight (Padding Before):",
         "lbl_pad_after": "Padding after highlight (Padding After):",
         "lbl_gap": "Minimum silence to split (Min Gap):",
-        "chk_facecam": "🤖 Facecam AI (Facial expression & laughter analysis from webcam)",
+        "chk_facecam": "Facecam AI (Facial expression & laughter analysis from webcam)",
         "sub_facecam": "Combines audio analysis with computer vision — prioritizes highest facial reactions, laughs and screams.",
 
         # PeciCut Section 4: Export
@@ -331,75 +338,75 @@ TRANSLATIONS = {
         "btn_change_out": "Change output folder...",
         "out_dir_default": "Output: Automatically in source video directory",
         "out_dir_custom": "Output: ",
-        "chk_review_segments": "🎬 Open interactive editor & video preview before export",
+        "chk_review_segments": "Open interactive editor & video preview before export",
         "sub_review_segments": "Allows you to preview detected moments and customize which clips to export.",
 
         # PeciCut Section 5: Progress & Results
-        "btn_process": "🚀 Start Processing Recording",
+        "btn_process": "Start Processing Recording",
         "btn_cancel": "Cancel",
         "status_ready": "Video ready. Configure parameters and click 'Start Processing'.",
         "status_waiting_editor": "Waiting for moment selection in editor...",
-        "btn_open_folder": "📂 Open Destination Folder",
-        "lbl_done": "✓ Done!",
+        "btn_open_folder": "Open Destination Folder",
+        "lbl_done": "Done!",
 
         # Settings Card 1: Themes
-        "card_theme_title": "🎨 Application Color Theme",
+        "card_theme_title": " Application Color Theme",
         "card_theme_sub": "Select studio visual style (click on preview):",
         "theme_system": "System",
         "theme_light": "Light",
         "theme_dark": "Dark",
 
         # Settings Card 2: Language
-        "card_lang_title": "🌍 Application Language / Jazyk",
+        "card_lang_title": " Application Language / Jazyk",
         "card_lang_sub": "Select your preferred user interface language for Pecislav Studio:",
         "lbl_select_language": "Active UI Language:",
 
         # Settings Card 3: Default Export & Folder Behavior
-        "card_export_title": "📁 Default Export & Folder Behavior",
+        "card_export_title": "Default Export & Folder Behavior",
         "card_export_sub": "Set where exported highlights are saved and how the studio behaves upon completion:",
         "lbl_default_folder": "Default export folder:",
         "lbl_folder_beside": "(Automatically in source video folder)",
-        "btn_set_export_folder": "📁 Change folder...",
-        "btn_reset_export_folder": "↺ Reset",
+        "btn_set_export_folder": "Change folder...",
+        "btn_reset_export_folder": " Reset",
         "chk_auto_open_folder": "Automatically open destination folder when export completes",
 
         # Settings Card 4: Performance / CPU
-        "card_perf_title": "⚡ Performance & CPU Load",
+        "card_perf_title": " Performance & CPU Load",
         "card_perf_sub": "Adjust CPU utilization during video rendering and AI facecam analysis:",
-        "perf_cores_detected": "🖥️ Detected: {cores} CPU cores",
-        "perf_max_opt": "🚀 Maximum Performance (all cores)",
-        "perf_balanced_opt": "🎮 Balanced / Gaming Mode (saves CPU)",
+        "perf_cores_detected": "Detected: {cores} CPU cores",
+        "perf_max_opt": "Maximum Performance (all cores)",
+        "perf_balanced_opt": "Balanced / Gaming Mode (saves CPU)",
         "perf_max_desc": "• Utilizes 100% of available CPU cores for fastest possible highlight cutting and facecam analysis.",
         "perf_balanced_desc": "• Limits processing to half the CPU cores ({half_cores}). Preserves CPU and GPU for smooth gaming or streaming on Twitch/YouTube.",
 
         # Settings Card 5: Maintenance / Cache
-        "card_cache_title": "🧹 Maintenance & Temporary Cache",
+        "card_cache_title": " Maintenance & Temporary Cache",
         "card_cache_sub": "Clean up temporary video segments, chunks, and cache from previous cut sessions:",
         "lbl_cache_heading": "Temporary cache status:",
-        "btn_clear_cache": "🗑️ Clear Cache",
-        "cache_clean": "✓ Cache is clean (0.0 MB)",
+        "btn_clear_cache": "Clear Cache",
+        "cache_clean": "Cache is clean (0.0 MB)",
         "cache_found": "Found {size_mb} MB of temporary data",
-        "cache_cleared_msg": "✓ Cache cleared successfully (freed {freed_mb} MB).",
+        "cache_cleared_msg": "Cache cleared successfully (freed {freed_mb} MB).",
 
         # Settings Card 6: Components
-        "card_comp_title": "📦 Component Health Check",
-        "btn_recheck": "🔄 Recheck",
-        "comp_ffmpeg_ok": "✓ FFmpeg & FFprobe: Ready",
-        "comp_ffmpeg_fail": "❌ FFmpeg & FFprobe: Missing",
+        "card_comp_title": " Component Health Check",
+        "btn_recheck": " Recheck",
+        "comp_ffmpeg_ok": "FFmpeg & FFprobe: Ready",
+        "comp_ffmpeg_fail": "X FFmpeg & FFprobe: Missing",
         "comp_ffmpeg_desc_ok": "Found on system: {name}",
         "comp_ffmpeg_desc_fail": "Required for audio analysis and video cutting",
-        "comp_models_ok": "✓ Facecam AI models: Ready (3/3)",
-        "comp_models_fail": "❌ Facecam AI models: Found {cnt}/3",
+        "comp_models_ok": "Facecam AI models: Ready (3/3)",
+        "comp_models_fail": "X Facecam AI models: Found {cnt}/3",
         "comp_models_desc_ok": "YuNet ONNX & Haar Cascades in models/ for face reaction detection",
         "comp_models_desc_fail": "Models missing for webcam reaction analysis",
-        "comp_dirs_ok": "✓ Application Working Directories: OK",
+        "comp_dirs_ok": "Application Working Directories: OK",
         "comp_dirs_desc": "models/, assets/, bin/ ready for use",
 
         # Settings Card 7: Version & Updates
-        "card_ver_title": "🚀 Application Version & Updates",
-        "btn_check_updates": "🔍 Check for Updates",
+        "card_ver_title": "Application Version & Updates",
+        "btn_check_updates": " Check for Updates",
         "installed_ver": f"Installed version: Pecislav Studio v{APP_VERSION} (by Pecislav)",
-        "update_status_latest": "✓ You are running the latest version.",
+        "update_status_latest": "You are running the latest version.",
     }
 }
 
@@ -619,8 +626,8 @@ class ModernTooltip:
             rec_box.pack(fill="x", anchor="w")
 
             rec_text = self.recommendation
-            if not rec_text.startswith("💡"):
-                rec_text = f"💡 Doporučení: {rec_text}"
+            if not rec_text.startswith(""):
+                rec_text = f"Doporuceni: {rec_text}"
 
             rec_lbl = tk.Label(
                 rec_box,
@@ -693,6 +700,267 @@ class SettingsDialog:
         parent._switch_view("settings")
 
 
+# -----------------------------------------------------------------------------
+# Dedicated Project History Dialog
+# -----------------------------------------------------------------------------
+
+class ProjectHistoryDialog(ctk.CTkToplevel):
+    """Dedicated modal dialog for managing and reopening previously processed projects."""
+
+    def __init__(
+        self,
+        parent: "AutoClipApp",
+        config: Dict,
+        on_open_project: Callable[[Dict], None],
+        on_clear_history: Callable[[], None],
+        on_close: Optional[Callable[[], None]] = None,
+        current_lang: str = "cs"
+    ):
+        super().__init__(parent)
+        self.parent_app = parent
+        self.config = config
+        self.on_open_project = on_open_project
+        self.on_clear_history = on_clear_history
+        self.on_close = on_close
+        self.current_lang = current_lang if current_lang in ("cs", "en") else "cs"
+
+        title = "Historie projektů • Pecislav Studio" if self.current_lang == "cs" else "Project History • Pecislav Studio"
+        self.title(title)
+        self.geometry("780x550")
+        self.minsize(680, 440)
+        self.configure(fg_color=BG_CARD)
+        self.transient(parent)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_close_window)
+
+        self._center()
+        self._build_ui()
+
+    def _center(self):
+        self.update_idletasks()
+        try:
+            w, h = 780, 550
+            px, py = self.parent_app.winfo_x(), self.parent_app.winfo_y()
+            pw, ph = self.parent_app.winfo_width(), self.parent_app.winfo_height()
+            self.geometry(f"{w}x{h}+{px + (pw - w) // 2}+{py + (ph - h) // 2}")
+        except Exception:
+            pass
+
+    def _on_close_window(self):
+        cb = self.on_close
+        self.on_close = None
+        try:
+            self.destroy()
+        finally:
+            if callable(cb):
+                cb()
+
+    def _build_ui(self):
+        for w in self.winfo_children():
+            w.destroy()
+
+        # Header
+        hdr = ctk.CTkFrame(self, fg_color="transparent")
+        hdr.pack(fill="x", padx=20, pady=(18, 12))
+
+        t_title = "Historie zpracovaných projektů" if self.current_lang == "cs" else "Processed Projects History"
+        t_sub = ("Videa, která prošla analýzou a střihem. Kliknutím na projekt se okamžitě vrátíte do editoru momentů."
+                 if self.current_lang == "cs"
+                 else "Videos processed by PeciCut. Click any project to open the moment editor immediately.")
+
+        lbl_t = ctk.CTkLabel(hdr, text=t_title, font=ctk.CTkFont(size=17, weight="bold"), text_color=TEXT_TITLE)
+        lbl_t.pack(anchor="w")
+        lbl_s = ctk.CTkLabel(hdr, text=t_sub, font=ctk.CTkFont(size=12), text_color=TEXT_MUTED)
+        lbl_s.pack(anchor="w", pady=(2, 0))
+
+        # Scrollable container for history items
+        self.scroll_list = ctk.CTkScrollableFrame(self, fg_color=BG_CARD_INNER, corner_radius=10,
+                                                  border_width=1, border_color=BORDER_CARD)
+        self.scroll_list.pack(fill="both", expand=True, padx=20, pady=(0, 14))
+
+        history = self.config.get("history", [])
+        valid_entries = [h for h in history if h.get("video")]
+
+        if not valid_entries:
+            empty_box = ctk.CTkFrame(self.scroll_list, fg_color="transparent")
+            empty_box.pack(expand=True, fill="both", pady=60)
+
+            msg1 = "Zatím žádná historie projektů" if self.current_lang == "cs" else "No project history yet"
+            msg2 = ("Až dokončíte analýzu videa nebo střih, projekt se zde automaticky uloží.\n"
+                    "Budete se k němu moci kdykoliv vrátit a znovu otevřít editor bez nutnosti re-analyzovat audio."
+                    if self.current_lang == "cs"
+                    else "Completed video analyses and cuts will be stored here.\nYou can return anytime to review moments without re-analyzing audio.")
+            ctk.CTkLabel(empty_box, text=msg1, font=ctk.CTkFont(size=14, weight="bold"),
+                         text_color=TEXT_TITLE).pack(pady=(0, 6))
+            ctk.CTkLabel(empty_box, text=msg2, font=ctk.CTkFont(size=12),
+                         text_color=TEXT_MUTED, justify="center").pack()
+        else:
+            for item in reversed(valid_entries):
+                self._render_item(item)
+
+        # Footer
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=20, pady=(0, 16))
+
+        if valid_entries:
+            t_clr = "Vymazat celou historii" if self.current_lang == "cs" else "Clear All History"
+            ctk.CTkButton(
+                footer,
+                text=t_clr,
+                command=self._on_clear_clicked,
+                height=32,
+                font=ctk.CTkFont(size=11),
+                fg_color=BG_CARD_INNER,
+                hover_color=("#E5E7EB", "#252834"),
+                text_color=TEXT_MUTED,
+                border_width=1,
+                border_color=BORDER_CARD,
+                corner_radius=6
+            ).pack(side="left")
+
+        t_close = "Zavřít" if self.current_lang == "cs" else "Close"
+        ctk.CTkButton(
+            footer,
+            text=t_close,
+            command=self._on_close_window,
+            height=34,
+            width=100,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            text_color="#FFFFFF",
+            corner_radius=6
+        ).pack(side="right")
+
+    def _render_item(self, item: Dict):
+        card = ctk.CTkFrame(self.scroll_list, fg_color=BG_CARD, corner_radius=8,
+                            border_width=1, border_color=BORDER_CARD)
+        card.pack(fill="x", padx=8, pady=4)
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=14, pady=10)
+
+        video_path_str = item.get("video", "")
+        v_path = Path(video_path_str)
+        date_str = item.get("date", "")
+        stats = item.get("stats", {})
+        output_path = item.get("output", "")
+
+        segs = stats.get("total_segments", 0)
+        dur_in = stats.get("original_duration_min", 0.0)
+        dur_out = stats.get("output_duration_min", 0.0)
+
+        left = ctk.CTkFrame(inner, fg_color="transparent")
+        left.pack(side="left", fill="x", expand=True)
+
+        # File name
+        ctk.CTkLabel(left, text=v_path.name, font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=TEXT_TITLE, anchor="w").pack(anchor="w")
+
+        # Details
+        if dur_out > 0.05:
+            cut_str = f"Sestřih: {dur_out:.1f} min" if self.current_lang == "cs" else f"Cut: {dur_out:.1f} min"
+        else:
+            cut_str = "Připraveno k sestřihu" if self.current_lang == "cs" else "Ready to cut"
+
+        if self.current_lang == "cs":
+            det = f"{date_str}  •  {segs} momentů  •  Původní: {dur_in:.1f} min  •  {cut_str}"
+        else:
+            det = f"{date_str}  •  {segs} clips  •  Original: {dur_in:.1f} min  •  {cut_str}"
+        ctk.CTkLabel(left, text=det, font=ctk.CTkFont(size=11),
+                     text_color=ORANGE_PRIMARY if segs > 0 else TEXT_MUTED, anchor="w").pack(anchor="w", pady=(2, 2))
+
+        # Path muted
+        disp_path = str(v_path.parent)
+        if len(disp_path) > 55:
+            disp_path = disp_path[:25] + "..." + disp_path[-25:]
+        ctk.CTkLabel(left, text=disp_path, font=ctk.CTkFont(size=10),
+                     text_color=TEXT_MUTED, anchor="w").pack(anchor="w")
+
+        # Action buttons (clean unified horizontal row)
+        btns = ctk.CTkFrame(inner, fg_color="transparent")
+        btns.pack(side="right", padx=(12, 0))
+
+        # Otevřít v editoru
+        t_edit = "Otevřít v editoru" if self.current_lang == "cs" else "Open in Editor"
+        btn_open = ctk.CTkButton(
+            btns,
+            text=t_edit,
+            command=lambda it=item: self._select_project(it),
+            height=32,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=ORANGE_PRIMARY,
+            hover_color=ORANGE_HOVER,
+            text_color="#FFFFFF",
+            corner_radius=6
+        )
+        btn_open.pack(side="left", padx=(0, 6))
+
+        if output_path and Path(output_path).parent.is_dir():
+            t_f = "Složka" if self.current_lang == "cs" else "Folder"
+            btn_folder = ctk.CTkButton(
+                btns,
+                text=t_f,
+                command=lambda p=Path(output_path).parent: self.parent_app._open_folder(p),
+                height=32,
+                width=64,
+                font=ctk.CTkFont(size=11),
+                fg_color=BG_CARD_INNER,
+                hover_color=("#E5E7EB", "#252834"),
+                text_color=TEXT_TITLE,
+                border_width=1,
+                border_color=BORDER_CARD,
+                corner_radius=6
+            )
+            btn_folder.pack(side="left", padx=(0, 6))
+
+        t_del = "Smazat" if self.current_lang == "cs" else "Delete"
+        btn_del = ctk.CTkButton(
+            btns,
+            text=t_del,
+            command=lambda it=item: self._confirm_and_delete_item(it),
+            height=32,
+            width=64,
+            font=ctk.CTkFont(size=11),
+            fg_color=BG_CARD_INNER,
+            hover_color=("#FEE2E2", "#3B1818"),
+            text_color=("#DC2626", "#F87171"),
+            border_width=1,
+            border_color=BORDER_CARD,
+            corner_radius=6
+        )
+        btn_del.pack(side="left")
+
+    def _select_project(self, item: Dict):
+        self.on_close = None
+        self.destroy()
+        self.on_open_project(item)
+
+    def _confirm_and_delete_item(self, item: Dict):
+        v_name = Path(item.get("video", "")).name or "projekt"
+        title = "Potvrdit smazání" if self.current_lang == "cs" else "Confirm Delete"
+        msg = (f"Opravdu si přejete smazat projekt z historie?\n\n{v_name}"
+               if self.current_lang == "cs"
+               else f"Are you sure you want to remove this project from history?\n\n{v_name}")
+        if messagebox.askyesno(title, msg, parent=self):
+            self._delete_item(item)
+
+    def _delete_item(self, item: Dict):
+        history = self.config.get("history", [])
+        self.config["history"] = [h for h in history if h.get("video") != item.get("video")]
+        save_app_config(self.config)
+        self._build_ui()
+
+    def _on_clear_clicked(self):
+        title = "Vymazat historii" if self.current_lang == "cs" else "Clear History"
+        msg = ("Opravdu si přejete vymazat celou historii projektů?"
+               if self.current_lang == "cs"
+               else "Are you sure you want to clear all project history?")
+        if messagebox.askyesno(title, msg, parent=self):
+            self.on_clear_history()
+            self._build_ui()
+
+
 class AutoClipApp(ctk.CTk):
     _SPINNER = ("⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷")
 
@@ -711,8 +979,8 @@ class AutoClipApp(ctk.CTk):
 
         # Window settings
         self.title(self.tr("app_title"))
-        self.geometry("1060x860")
-        self.minsize(940, 720)
+        self.geometry("1080x860")
+        self.minsize(1020, 720)
         self.configure(fg_color=BG_WINDOW)
 
         # Application state
@@ -730,6 +998,7 @@ class AutoClipApp(ctk.CTk):
         self.last_output_path: Optional[Path] = None
         self.settings_dialog = None
         self.current_view = "pecicut"
+        self._dim_overlay: Optional[ctk.CTkFrame] = None
 
         # Build Studio Shell: Left Sidebar + Right Pages Container
         self._build_app_shell()
@@ -1045,10 +1314,15 @@ class AutoClipApp(ctk.CTk):
         self.page_pecicut = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
         self.scroll_frame = self.page_pecicut  # Preserve self.scroll_frame for existing callbacks
 
+        # 1. Výběr souboru
         self._build_file_section(self.page_pecicut)
+        # 2. Audio stopa
         self._build_audio_track_section(self.page_pecicut)
+        # 3. Parametry detekce
         self._build_parameters_section(self.page_pecicut)
+        # 4. Export
         self._build_export_section(self.page_pecicut)
+        # 5. Průběh a výsledky
         self._build_progress_section(self.page_pecicut)
 
     def _build_settings_view(self, parent):
@@ -1504,6 +1778,8 @@ class AutoClipApp(ctk.CTk):
             self.lbl_sidebar_system.configure(text=self.tr("nav_system"))
         if hasattr(self, "btn_nav_settings"):
             self.btn_nav_settings.configure(text=self.tr("nav_settings"))
+        if hasattr(self, "btn_open_history"):
+            self.btn_open_history.configure(text=self.tr("nav_history"))
         if hasattr(self, "lbl_footer"):
             self.lbl_footer.configure(text=self.tr("footer_text"))
 
@@ -1631,7 +1907,7 @@ class AutoClipApp(ctk.CTk):
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_fail"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
             ctk.CTkButton(
-                row0, text="⬇️ " + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
+                row0, text="" + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
                 width=135, height=26,
                 font=ctk.CTkFont(size=11, weight="bold"),
                 fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1656,7 +1932,7 @@ class AutoClipApp(ctk.CTk):
             ctk.CTkLabel(info1, text=self.tr("comp_models_fail", cnt=cnt), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
             ctk.CTkLabel(info1, text=self.tr("comp_models_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
             ctk.CTkButton(
-                row1, text="⬇️ " + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
+                row1, text="" + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
                 width=135, height=26,
                 font=ctk.CTkFont(size=11, weight="bold"),
                 fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1839,7 +2115,7 @@ class AutoClipApp(ctk.CTk):
                 t_lbl.configure(text=self.tr("comp_ffmpeg_fail"), text_color="#EF4444")
                 s_lbl.configure(text=self.tr("comp_ffmpeg_desc_fail"), text_color=TEXT_BODY)
                 ctk.CTkButton(
-                    row, text="⬇️ " + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
+                    row, text="" + ("Stáhnout FFmpeg" if self.current_language == "cs" else "Download FFmpeg"),
                     width=135, height=26,
                     font=ctk.CTkFont(size=11, weight="bold"),
                     fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1857,7 +2133,7 @@ class AutoClipApp(ctk.CTk):
                 t_lbl.configure(text=self.tr("comp_models_fail", cnt=models_cnt), text_color="#EF4444")
                 s_lbl.configure(text=self.tr("comp_models_desc_fail"), text_color=TEXT_BODY)
                 ctk.CTkButton(
-                    row, text="⬇️ " + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
+                    row, text="" + ("Stáhnout modely" if self.current_language == "cs" else "Download models"),
                     width=135, height=26,
                     font=ctk.CTkFont(size=11, weight="bold"),
                     fg_color=ORANGE_PRIMARY, hover_color=ORANGE_HOVER,
@@ -1897,7 +2173,7 @@ class AutoClipApp(ctk.CTk):
     def _check_for_updates(self):
         self.btn_update.configure(state="disabled")
         self.lbl_update_status.configure(
-            text="🔄 Ověřuji dostupnost nejnovější verze...",
+            text=" Ověřuji dostupnost nejnovější verze...",
             text_color=TEXT_BODY
         )
         result_holder = {}
@@ -1926,10 +2202,10 @@ class AutoClipApp(ctk.CTk):
                     continue
 
             if new_version_found:
-                msg = f"🚀 K dispozici je nová verze: Pecislav Studio v{new_version_found}!"
+                msg = f"K dispozici je nová verze: Pecislav Studio v{new_version_found}!"
                 color = ORANGE_ACCENT_TEXT
             else:
-                msg = f"✓ Používáte nejnovější verzi (Pecislav Studio v{APP_VERSION})."
+                msg = f"Používáte nejnovější verzi (Pecislav Studio v{APP_VERSION})."
                 color = "#22C55E"
 
             result_holder["done"] = (msg, color)
@@ -1954,7 +2230,7 @@ class AutoClipApp(ctk.CTk):
         box = ctk.CTkFrame(parent, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
         box.pack(fill="x", pady=8)
 
-        # Header row with title and ? button
+        # Header row with title, ? button, and Project History button
         hdr = ctk.CTkFrame(box, fg_color="transparent")
         hdr.pack(fill="x", padx=16, pady=(12, 4))
 
@@ -1976,6 +2252,23 @@ class AutoClipApp(ctk.CTk):
             recommendation="Nahrajte MP4 nebo MKV soubor z OBS Studia o délce 2 až 6 hodin."
         )
         q_btn.pack(side="left", padx=(8, 0))
+
+        t_hist = "Historie projektů" if self.current_language == "cs" else "Project History"
+        self.btn_open_history = ctk.CTkButton(
+            hdr,
+            text=t_hist,
+            command=self._open_history_dialog,
+            height=28,
+            width=140,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=BG_CARD_INNER,
+            hover_color=("#E5E7EB", "#252834"),
+            text_color=ORANGE_PRIMARY,
+            border_width=1,
+            border_color=BORDER_CARD,
+            corner_radius=6
+        )
+        self.btn_open_history.pack(side="right")
 
         row = ctk.CTkFrame(box, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(4, 6))
@@ -2016,6 +2309,318 @@ class AutoClipApp(ctk.CTk):
             anchor="w"
         )
         self.lbl_meta_info.pack(padx=12, pady=8, anchor="w")
+
+    def _show_dim_overlay(self, title: Optional[str] = None, subtitle: Optional[str] = None):
+        """Zobrazí tmavou neprůhlednou vrstvu přes hlavní okno s kartou informující o otevřeném editoru či dialogu."""
+        self._hide_dim_overlay()
+        try:
+            self.update_idletasks()
+            self._dim_overlay = ctk.CTkFrame(
+                self,
+                fg_color=("#0B0C10", "#0B0C10"),
+                corner_radius=0
+            )
+            self._dim_overlay.place(relx=0, rely=0, relwidth=1.0, relheight=1.0)
+            self._dim_overlay.lift()
+
+            card = ctk.CTkFrame(
+                self._dim_overlay,
+                fg_color=("#181A22", "#181A22"),
+                corner_radius=12,
+                border_width=1,
+                border_color=("#2B2E3B", "#2B2E3B")
+            )
+            card.place(relx=0.5, rely=0.5, anchor="center")
+
+            title_txt = title or ("Editor momentů je otevřen" if self.current_language == "cs" else "Segment Editor is Open")
+            sub_txt = subtitle or ("Upravte nebo potvrďte výběr v okně editoru.\nPo dokončení nebo zavření editoru se aplikace odemkne."
+                                   if self.current_language == "cs"
+                                   else "Review clips in the editor window.\nThe main window will unlock once closed.")
+
+            ctk.CTkLabel(
+                card,
+                text=title_txt,
+                font=ctk.CTkFont(size=17, weight="bold"),
+                text_color="#F9FAFB"
+            ).pack(padx=40, pady=(26, 6))
+
+            ctk.CTkLabel(
+                card,
+                text=sub_txt,
+                font=ctk.CTkFont(size=12),
+                text_color="#9CA3AF",
+                justify="center"
+            ).pack(padx=40, pady=(0, 26))
+        except Exception:
+            pass
+
+    def _hide_dim_overlay(self):
+        """Skryje ztmavovací vrstvu."""
+        if hasattr(self, "_dim_overlay") and self._dim_overlay:
+            try:
+                self._dim_overlay.destroy()
+            except Exception:
+                pass
+            self._dim_overlay = None
+
+    def _open_history_dialog(self):
+        """Otevře samostatné okno s historií projektů pro výběr videa."""
+        t_hist_title = "Historie projektů je otevřena" if self.current_language == "cs" else "Project History is Open"
+        t_hist_sub = ("Vyberte video pro úpravu v editoru nebo zavřete okno historie pro návrat."
+                      if self.current_language == "cs"
+                      else "Select a video to edit in the editor or close the history window to return.")
+        self._show_dim_overlay(title=t_hist_title, subtitle=t_hist_sub)
+
+        ProjectHistoryDialog(
+            parent=self,
+            config=self.config,
+            on_open_project=self._open_project_from_history,
+            on_clear_history=self._clear_history,
+            on_close=self._hide_dim_overlay,
+            current_lang=self.current_language
+        )
+
+    def _open_project_from_history(self, item: Dict):
+        """Načte zpracovaný projekt z historie a okamžitě otevře Segment Editor."""
+        video_str = item.get("video", "")
+        if not video_str:
+            self._hide_dim_overlay()
+            return
+        video_path = Path(video_str)
+        if not video_path.is_file():
+            self._hide_dim_overlay()
+            messagebox.showwarning(
+                "Soubor nenalezen" if self.current_language == "cs" else "File Not Found",
+                f"Video soubor nebyl nalezen na původní cestě:\n{video_str}"
+            )
+            return
+
+        cache_file_str = item.get("cache_file", "")
+        data = None
+        if cache_file_str and Path(cache_file_str).is_file():
+            try:
+                with open(cache_file_str, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = None
+
+        if not data:
+            cache_dir = Path(__file__).parent / ".project_cache"
+            v_hash = hashlib.md5(str(video_path.resolve()).encode("utf-8")).hexdigest()[:12]
+            cand = cache_dir / f"{video_path.stem}_{v_hash}.json"
+            if cand.is_file():
+                try:
+                    with open(cand, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = None
+
+        if not data or not data.get("all_segments"):
+            self._hide_dim_overlay()
+            self._load_video_file(str(video_path))
+            messagebox.showinfo(
+                "Informace" if self.current_language == "cs" else "Info",
+                "Video bylo načteno. Pro tento starší záznam nejsou uloženy náhledové segmenty v cache, spusťte prosím zpracování."
+                if self.current_language == "cs"
+                else "Video was loaded. Cached moments not found for this older item, please start processing."
+            )
+            return
+
+        self.current_video_path = video_path
+        disp_name = video_path.name if len(video_path.name) <= 34 else (video_path.name[:20] + "..." + video_path.name[-10:])
+        self.lbl_file_path.configure(text=disp_name, text_color=TEXT_TITLE)
+        if not self.video_metadata:
+            self.video_metadata = get_video_metadata(video_path)
+
+        all_segs = [tuple(s) for s in data.get("all_segments", [])]
+        rec_segs = [tuple(s) for s in data.get("recommended_segments", all_segs)]
+        target_dur = data.get("target_dur_sec")
+
+        self._show_dim_overlay()
+
+        def on_confirmed_from_editor(chosen_segments):
+            self._hide_dim_overlay()
+            self._start_export_for_segments(video_path, chosen_segments)
+
+        def on_cancelled_from_editor():
+            self._hide_dim_overlay()
+
+        dlg = SegmentReviewDialog(
+            parent=self,
+            video_path=video_path,
+            all_segments=all_segs,
+            recommended_segments=rec_segs,
+            target_duration_sec=target_dur,
+            current_lang=self.current_language,
+            on_confirm=on_confirmed_from_editor,
+            on_cancel=on_cancelled_from_editor
+        )
+        dlg.lift()
+        dlg.focus_force()
+
+    def _start_export_for_segments(self, video_path: Path, segments: List[Tuple]):
+        """Spustí export (EDL/MP4) přímo z editoru bez nutnosti re-analyzovat audio."""
+        if not segments:
+            return
+
+        selected_format_label = self.format_var.get().lower()
+        export_edl = "edl" in selected_format_label
+        export_mp4 = "mp4" in selected_format_label
+        selected_mode_label = self.mode_var.get().lower()
+        mode = "highlights" if "highlight" in selected_mode_label else "remove_silence"
+        output_dir = self.output_directory or video_path.parent
+
+        self.is_processing = True
+        self._proc_start_time = time.time()
+        self._last_eta_calc_time = 0.0
+        self._cached_eta_str = ""
+        self._eta_smoothed = 25.0
+        self.cancel_event.clear()
+        self.btn_process.configure(state="disabled")
+        self.btn_select_file.configure(state="disabled")
+        self.btn_cancel.configure(state="normal")
+        self.result_card.pack_forget()
+        self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+        self.progress_bar.set(0.0)
+
+        def export_worker():
+            try:
+                meta = self.video_metadata or get_video_metadata(video_path)
+                total_duration = meta.get("duration", 0.0)
+                fps = meta.get("fps", 30.0)
+                threads = self._get_configured_threads()
+
+                stats = calculate_cut_statistics(total_duration, segments)
+                base_name = video_path.stem
+                suffix_mode = "highlights" if mode == "highlights" else "nosilence"
+                generated_files = []
+
+                if export_edl:
+                    self._update_progress(0.20, "Generování CMX 3600 EDL souboru...")
+                    edl_path = output_dir / f"{base_name}_PeciCut_{suffix_mode}.edl"
+                    generate_cmx3600_edl(
+                        segments=segments,
+                        video_source_path=video_path,
+                        output_edl_path=edl_path,
+                        fps=fps,
+                        title=f"PECICUT_{suffix_mode.upper()}"
+                    )
+                    generated_files.append(edl_path)
+                    self.last_output_path = edl_path
+
+                if export_mp4:
+                    self._update_progress(0.40, "Příprava bezztrátového střihu videa (PeciCut FFmpeg concat)...")
+                    def cut_cb(fraction: float, message: str):
+                        p = 0.40 + (fraction * 0.58)
+                        self._update_progress(p, message)
+
+                    ext = video_path.suffix if video_path.suffix.lower() in [".mp4", ".mkv", ".mov"] else ".mp4"
+                    out_video_path = output_dir / f"{base_name}_PeciCut_{suffix_mode}_cut{ext}"
+                    cut_res = cut_video_lossless(
+                        input_video_path=video_path,
+                        segments=segments,
+                        output_video_path=out_video_path,
+                        threads=threads,
+                        progress_callback=cut_cb,
+                        cancel_event=self.cancel_event
+                    )
+                    if self.cancel_event.is_set():
+                        self._on_finished_ui(cancelled=True)
+                        return
+                    if cut_res:
+                        generated_files.append(cut_res)
+                        self.last_output_path = cut_res
+
+                self._update_progress(1.0, "Export úspěšně dokončen!")
+                self._save_project_cache(
+                    video_path=video_path,
+                    all_segments=segments,
+                    recommended_segments=segments,
+                    target_dur_sec=None,
+                    stats=stats,
+                    output_files=generated_files
+                )
+                self._on_finished_ui(stats=stats, generated_files=generated_files)
+            except Exception as e:
+                self._on_finished_ui(error_msg=f"Chyba při exportu videa:\n{e}")
+
+        threading.Thread(target=export_worker, daemon=True).start()
+
+    def _save_project_cache(
+        self,
+        video_path: Path,
+        all_segments: List[Tuple],
+        recommended_segments: List[Tuple],
+        target_dur_sec: Optional[float],
+        stats: Optional[Dict] = None,
+        output_files: Optional[List[Path]] = None
+    ) -> Path:
+        """Uloží segmenty a metadata projektu na disk pro okamžitý návrat z historie."""
+        cache_dir = Path(__file__).parent / ".project_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        v_str = str(video_path.resolve())
+        v_hash = hashlib.md5(v_str.encode("utf-8")).hexdigest()[:12]
+        cache_file = cache_dir / f"{video_path.stem}_{v_hash}.json"
+
+        def clean_segs(segs):
+            return [[float(x) for x in s] for s in segs]
+
+        date_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+        data = {
+            "video": v_str,
+            "date": date_str,
+            "target_dur_sec": target_dur_sec,
+            "stats": stats or {},
+            "output_files": [str(p) for p in (output_files or [])],
+            "all_segments": clean_segs(all_segments),
+            "recommended_segments": clean_segs(recommended_segments),
+        }
+
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+        history = self.config.get("history", [])
+        history = [h for h in history if h.get("video") != v_str]
+        history.append({
+            "video": v_str,
+            "cache_file": str(cache_file),
+            "date": date_str,
+            "stats": {
+                "original_duration_min": round((stats.get("original_duration_sec", 0) if stats else 0) / 60, 1),
+                "output_duration_min": round((stats.get("output_duration_sec", 0) if stats else 0) / 60, 1),
+                "total_segments": len(all_segments),
+            },
+            "output": str(output_files[0]) if output_files else "",
+        })
+        self.config["history"] = history[-15:]
+        save_app_config(self.config)
+        return cache_file
+
+    def _open_folder(self, path: Path):
+        """Otevře složku ve Finderu / Průzkumníku."""
+        try:
+            if platform.system() == "Darwin":
+                subprocess.Popen(["open", str(path)])
+            elif platform.system() == "Windows":
+                subprocess.Popen(["explorer", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+        except Exception:
+            pass
+
+    def _clear_history(self):
+        self.config["history"] = []
+        save_app_config(self.config)
+
+    def _load_video_file(self, path: str):
+        """Načte vybraný soubor videa."""
+        p = Path(path)
+        if p.is_file():
+            self._on_file_selected(str(p))
 
     def _build_audio_track_section(self, parent):
         """2. Audio track dropdown menu."""
@@ -2101,12 +2706,12 @@ class AutoClipApp(ctk.CTk):
         q_btn.pack(side="left", padx=(8, 0))
 
         # Mode dropdown
-        self.mode_var = ctk.StringVar(value="🔥 Pouze akční highlighty (sestřih křiku a reakcí)")
+        self.mode_var = ctk.StringVar(value="Pouze akcni highlighty (sestřih křiku a reakcí)")
         self.mode_dropdown = ctk.CTkOptionMenu(
             box,
             values=[
-                "🔥 Pouze akční highlighty (sestřih křiku a reakcí)",
-                "✂️ Vyřezat pouze ticho (plná délka bez dlouhých pauz)"
+                "Pouze akcni highlighty (sestřih křiku a reakcí)",
+                "Vyrézat pouze ticho (plná délka bez dlouhých pauz)"
             ],
             variable=self.mode_var,
             command=self._on_mode_dropdown_change,
@@ -2147,16 +2752,16 @@ class AutoClipApp(ctk.CTk):
         )
         q_dur.pack(side="left", padx=(8, 0))
 
-        self.target_dur_var = ctk.StringVar(value="♾️ Bez limitu (všechny zachycené momenty)")
+        self.target_dur_var = ctk.StringVar(value="Bez limitu (všechny zachycené momenty)")
         self.target_dur_dropdown = ctk.CTkOptionMenu(
             box,
             values=[
-                "♾️ Bez limitu (všechny zachycené momenty)",
-                "⏱️ 5 minut (rychlý sestřih / TikTok / Shorts kompilace)",
-                "⏱️ 10 minut (optimální pro YouTube video)",
-                "⏱️ 15 minut (delší YouTube video)",
-                "⏱️ 20 minut (rozsáhlý highlight)",
-                "⏱️ 30 minut (dlouhá stream kompilace)"
+                "Bez limitu (všechny zachycené momenty)",
+                "5 minut (rychlý sestřih / TikTok / Shorts kompilace)",
+                "10 minut (optimální pro YouTube video)",
+                "15 minut (delší YouTube video)",
+                "20 minut (rozsáhlý highlight)",
+                "30 minut (dlouhá stream kompilace)"
             ],
             variable=self.target_dur_var,
             width=540,
@@ -2368,7 +2973,7 @@ class AutoClipApp(ctk.CTk):
                 "2. Detekce pohybu těla a hlavy: Měří kinetickou energii (když streamer nadskočí leknutím, hází hlavou či gestikuluje).\n\n"
                 "3. Inteligentní hybridní skóre: Zkombinuje hlasitost audia s reakcí ve webkameře. Momenty s velkou reakcí v obličeji "
                 "dostanou nejvyšší prioritu pro finální sestřih, zatímco náhodné zvuky ze hry bez reakce v obličeji jsou odfiltrovány.\n\n"
-                "⚡ Běží bleskově dvoufázově — skenuje pouze kandidátské momenty (cca 5-10 sekund na 4h video)."
+                " Běží bleskově dvoufázově — skenuje pouze kandidátské momenty (cca 5-10 sekund na 4h video)."
             ),
             recommendation="Ponechte zapnuté pro záznamy s webkamerou. Aplikace automaticky detekuje obličej."
         )
@@ -2411,12 +3016,12 @@ class AutoClipApp(ctk.CTk):
         q_fmt.pack(side="left", padx=(8, 0))
 
         # Format selector (Dropdown menu)
-        self.format_var = ctk.StringVar(value="🎥 Hotové MP4 video (rychlý bezztrátový FFmpeg střih)")
+        self.format_var = ctk.StringVar(value="Hotové MP4 video (rychlý bezztrátový FFmpeg střih)")
         self.format_dropdown = ctk.CTkOptionMenu(
             box,
             values=[
-                "🎥 Hotové MP4 video (rychlý bezztrátový FFmpeg střih)",
-                "📋 EDL Timeline (.edl pro DaVinci Resolve a Premiere Pro)"
+                "Hotové MP4 video (rychlý bezztrátový FFmpeg střih)",
+                "EDL Timeline (.edl pro DaVinci Resolve a Premiere Pro)"
             ],
             variable=self.format_var,
             width=540,
@@ -2588,14 +3193,14 @@ class AutoClipApp(ctk.CTk):
         if hasattr(self, "sidebar_ffmpeg_pill"):
             if ffmpeg_path and ffprobe_path:
                 self.sidebar_ffmpeg_pill.configure(
-                    text="✓ FFmpeg připraven",
+                    text="FFmpeg připraven",
                     text_color="#22C55E",
                     border_width=1,
                     border_color="#22C55E"
                 )
             else:
                 self.sidebar_ffmpeg_pill.configure(
-                    text="⚠️ FFmpeg chybí",
+                    text="FFmpeg chybí",
                     text_color="#EF4444",
                     border_width=1,
                     border_color="#EF4444"
@@ -2659,7 +3264,7 @@ class AutoClipApp(ctk.CTk):
         if success:
             self.progress_bar.set(1.0)
             self.lbl_status.configure(text="FFmpeg úspěšně nainstalován a připraven!")
-            messagebox.showinfo("Hotovo", f"🎉 {msg}")
+            messagebox.showinfo("Hotovo", msg)
         else:
             self.progress_bar.set(0.0)
             self.lbl_status.configure(text="Stažení FFmpeg selhalo.")
@@ -2699,7 +3304,8 @@ class AutoClipApp(ctk.CTk):
 
         video_path = Path(chosen)
         self.current_video_path = video_path
-        self.lbl_file_path.configure(text=video_path.name, text_color=TEXT_TITLE)
+        disp_name = video_path.name if len(video_path.name) <= 34 else (video_path.name[:20] + "..." + video_path.name[-10:])
+        self.lbl_file_path.configure(text=disp_name, text_color=TEXT_TITLE)
 
         # Apply default export directory if set in config, otherwise default beside video
         if self.default_export_dir and Path(self.default_export_dir).is_dir():
@@ -2745,7 +3351,7 @@ class AutoClipApp(ctk.CTk):
         tracks = meta.get("audio_tracks", [])
 
         info_text = (
-            f"📹 Délka: {dur_str}  |  FPS: {fps:.2f}  |  Rozlišení: {w}x{h_res}  |  "
+            f"Délka: {dur_str}  |  FPS: {fps:.2f}  |  Rozlišení: {w}x{h_res}  |  "
             f"Video Codec: {codec}  |  Audio stop: {len(tracks)}"
         )
         self.lbl_meta_info.configure(text=info_text, text_color=ORANGE_ACCENT_TEXT)
@@ -2831,6 +3437,11 @@ class AutoClipApp(ctk.CTk):
 
         # Prepare UI for processing state
         self.is_processing = True
+        self._proc_start_time = time.time()
+        self._last_eta_calc_time = 0.0
+        self._cached_eta_str = ""
+        dur_sec = self.video_metadata.get("duration", 7200.0) if self.video_metadata else 7200.0
+        self._eta_smoothed = max(35.0, (dur_sec / 150.0) + (25.0 if export_mp4 else 5.0))
         self.cancel_event.clear()
         self.btn_process.configure(state="disabled")
         self.btn_select_file.configure(state="disabled")
@@ -2907,11 +3518,18 @@ class AutoClipApp(ctk.CTk):
                 p = 0.10 + (fraction * 0.52)
                 self._update_progress(p, message)
 
+            # Pro cílovou délku (např. 10, 15, 20, 30 min) nasbíráme dostatečně
+            # široký pool kandidátních momentů (včetně živého mluvení, smíchu a reakcí),
+            # ze kterých následně AI vybere ty nejlepší a nejhlasitější pro naplnění stopáže.
+            effective_thresh = threshold_db
+            if mode == "highlights" and target_dur_sec and target_dur_sec > 0:
+                effective_thresh = min(threshold_db, -17.5)
+
             raw_segments = analyze_audio_stream(
                 video_path=video_path,
                 track_index=track_idx,
                 total_duration=total_duration,
-                threshold_db=threshold_db,
+                threshold_db=effective_thresh,
                 mode=mode,
                 padding_before=pad_before,
                 padding_after=pad_after,
@@ -2939,7 +3557,7 @@ class AutoClipApp(ctk.CTk):
             facecam_active = False
             # 3.5 Facecam AI Vision Pass (if enabled and in highlights mode)
             if use_facecam_ai and mode == "highlights" and merged_segments:
-                self._update_progress(0.66, "🤖 Příprava Facecam AI (kontrola modelů YuNet a detektoru reakcí)...")
+                self._update_progress(0.66, "Příprava Facecam AI (kontrola modelů YuNet a detektoru reakcí)...")
                 models_ok = ensure_ai_models_present(
                     progress_callback=lambda msg: self._update_progress(0.66, msg)
                 )
@@ -2947,7 +3565,7 @@ class AutoClipApp(ctk.CTk):
                     facecam_active = True
                     def ai_progress(pct: float, msg: str):
                         p = 0.67 + (pct / 100.0) * 0.08
-                        self._update_progress(p, f"🤖 {msg}")
+                        self._update_progress(p, f"{msg}")
 
                     merged_segments = analyze_candidate_facecam_segments(
                         video_path=video_path,
@@ -2974,6 +3592,16 @@ class AutoClipApp(ctk.CTk):
             else:
                 recommended_segments = list(all_candidate_segments)
 
+            # Uložit do cache a historie po úspěšné audio analýze (proces je hotový)
+            self._save_project_cache(
+                video_path=video_path,
+                all_segments=all_candidate_segments,
+                recommended_segments=recommended_segments,
+                target_dur_sec=target_dur_sec,
+                stats={"original_duration_sec": total_duration, "total_segments": len(all_candidate_segments)},
+                output_files=None
+            )
+
             # 4.5 Interactive Segment Review & Video Preview Editor (Option A)
             if open_editor and all_candidate_segments:
                 self._update_progress(0.70, self.tr("status_waiting_editor"))
@@ -2981,7 +3609,8 @@ class AutoClipApp(ctk.CTk):
                 editor_result = {"confirmed": False, "segments": []}
 
                 def show_editor():
-                    SegmentReviewDialog(
+                    self._show_dim_overlay()
+                    dlg = SegmentReviewDialog(
                         parent=self,
                         video_path=video_path,
                         all_segments=all_candidate_segments,
@@ -2991,8 +3620,11 @@ class AutoClipApp(ctk.CTk):
                         on_confirm=lambda chosen: on_editor_done(True, chosen),
                         on_cancel=lambda: on_editor_done(False, [])
                     )
+                    dlg.lift()
+                    dlg.focus_force()
 
                 def on_editor_done(confirmed: bool, chosen: List[Tuple]):
+                    self._hide_dim_overlay()
                     editor_result["confirmed"] = confirmed
                     editor_result["segments"] = chosen
                     editor_event.set()
@@ -3065,16 +3697,64 @@ class AutoClipApp(ctk.CTk):
 
             # 7. Completed successfully
             self._update_progress(1.0, "Zpracování úspěšně dokončeno!")
+            self._save_project_cache(
+                video_path=video_path,
+                all_segments=all_candidate_segments,
+                recommended_segments=merged_segments,
+                target_dur_sec=target_dur_sec,
+                stats=stats,
+                output_files=generated_files
+            )
             self._on_finished_ui(stats=stats, generated_files=generated_files)
 
         except Exception as e:
             self._on_finished_ui(error_msg=f"Neočekávaná chyba při zpracování:\n{e}")
 
     def _update_progress(self, fraction: float, message: str):
-        """Thread-safe UI update for progress bar and status label."""
+        """Thread-safe UI update for progress bar and status label with percentage and conservative ETA."""
         def update():
-            self.progress_bar.set(min(max(fraction, 0.0), 1.0))
-            self.lbl_status.configure(text=message)
+            clamped = min(max(fraction, 0.0), 1.0)
+            self.progress_bar.set(clamped)
+            pct = int(round(clamped * 100))
+
+            eta_str = ""
+            start_t = getattr(self, "_proc_start_time", None)
+            now = time.time()
+
+            if start_t and 0.02 <= clamped < 0.99:
+                last_calc = getattr(self, "_last_eta_calc_time", 0.0)
+                cached = getattr(self, "_cached_eta_str", "")
+                if (now - last_calc) >= 1.2 or not cached:
+                    self._last_eta_calc_time = now
+                    elapsed = max(0.5, now - start_t)
+
+                    rate = clamped / elapsed
+                    raw_remaining = (1.0 - clamped) / max(0.00005, rate)
+
+                    curr_eta = getattr(self, "_eta_smoothed", raw_remaining)
+                    # Plynulý odhad bez okamžitého propadu na 1s
+                    self._eta_smoothed = 0.85 * curr_eta + 0.15 * raw_remaining
+
+                    rem = int(round(self._eta_smoothed))
+                    if rem >= 3600:
+                        h, r = divmod(rem, 3600)
+                        m = r // 60
+                        eta_val = f"~{h}h {m:02d}m"
+                    elif rem >= 60:
+                        m, s = divmod(rem, 60)
+                        eta_val = f"~{m}m {s:02d}s"
+                    else:
+                        eta_val = f"~{max(2, rem)}s"
+
+                    if self.current_language == "cs":
+                        self._cached_eta_str = f" (Zbývá {eta_val})"
+                    else:
+                        self._cached_eta_str = f" ({eta_val} left)"
+
+                eta_str = getattr(self, "_cached_eta_str", "")
+
+            full_text = f"{pct}%{eta_str} • {message}"
+            self.lbl_status.configure(text=full_text)
         self.after(0, update)
 
     def _on_finished_ui(
