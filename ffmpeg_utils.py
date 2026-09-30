@@ -38,6 +38,23 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def get_persistent_bin_dir() -> Path:
+    """
+    Returns a persistent directory for downloaded binaries (FFmpeg/FFprobe/FFplay)
+    that persists across app updates, moves, and temporary folder cleanups.
+    """
+    if platform.system().lower() == "windows":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            p = Path(local_app_data) / "PecislavStudio" / "bin"
+        else:
+            p = Path.home() / ".pecislavstudio" / "bin"
+    else:
+        p = Path.home() / ".pecislavstudio" / "bin"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def find_binary(binary_name: str) -> Optional[Path]:
     """
     Locates a binary (ffmpeg or ffprobe) following multiplatform resolution logic.
@@ -47,12 +64,15 @@ def find_binary(binary_name: str) -> Optional[Path]:
 
     base_dir = get_base_dir()
     app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+    persistent_bin = get_persistent_bin_dir()
 
     search_dirs = [
         app_dir,
         app_dir / "bin",
+        persistent_bin,
         base_dir,
         base_dir / "bin",
+        Path.home() / ".pecislavstudio" / "bin",
         Path.cwd(),
         Path.cwd() / "bin",
     ]
@@ -161,9 +181,7 @@ def download_ffmpeg_auto(
     local 'bin/' directory. Works across macOS and Windows.
     """
     system = platform.system().lower()
-    app_dir = Path(__file__).resolve().parent
-    bin_dir = app_dir / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
+    bin_dir = get_persistent_bin_dir()
 
     if progress_callback:
         progress_callback(0.05, "Zjišťuji konfiguraci systému...")
@@ -224,7 +242,7 @@ def download_ffmpeg_auto(
             with zipfile.ZipFile(buffer) as zf:
                 for member in zf.namelist():
                     filename = Path(member).name.lower()
-                    if filename in ("ffmpeg.exe", "ffprobe.exe"):
+                    if filename in ("ffmpeg.exe", "ffprobe.exe", "ffplay.exe"):
                         target_file = bin_dir / filename
                         with zf.open(member) as source, open(target_file, "wb") as target:
                             shutil.copyfileobj(source, target)
