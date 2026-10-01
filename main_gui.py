@@ -1451,9 +1451,9 @@ class AutoClipApp(BaseApp):
         self.sidebar_frame.pack(side="left", fill="y", padx=0, pady=0)
         self.sidebar_frame.pack_propagate(False)
 
-        # Brand header with two-line title aligned with logo
+        # Brand header with perfectly aligned two-line typography and refined edition badge
         brand_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        brand_frame.pack(fill="x", padx=16, pady=(20, 14))
+        brand_frame.pack(fill="x", padx=16, pady=(18, 12))
 
         brand_top_row = ctk.CTkFrame(brand_frame, fg_color="transparent")
         brand_top_row.pack(fill="x")
@@ -1470,40 +1470,46 @@ class AutoClipApp(BaseApp):
                 from PIL import Image
                 pil_img = Image.open(logo_path)
                 self.logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(38, 38))
-                lbl_logo = ctk.CTkLabel(brand_top_row, text="", image=self.logo_image)
+                lbl_logo = ctk.CTkLabel(brand_top_row, text="", image=self.logo_image, width=38, height=38)
                 lbl_logo.pack(side="left", padx=(0, 10))
             except Exception:
                 pass
 
-        # Two-line brand typography (Pecislav on top, Studio underneath)
+        # Two-line brand typography (Pecislav on top, Studio + sleek Pro Creator tag directly underneath)
         brand_text_box = ctk.CTkFrame(brand_top_row, fg_color="transparent")
         brand_text_box.pack(side="left", fill="both", expand=True)
 
         ctk.CTkLabel(
             brand_text_box,
             text="Pecislav",
-            font=ctk.CTkFont(size=17, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(anchor="w", pady=(0, 0))
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=TEXT_TITLE,
+            height=19
+        ).pack(anchor="w", pady=(0, 1))
+
+        row_studio = ctk.CTkFrame(brand_text_box, fg_color="transparent", height=18)
+        row_studio.pack(anchor="w", fill="x")
 
         ctk.CTkLabel(
-            brand_text_box,
+            row_studio,
             text="Studio",
-            font=ctk.CTkFont(size=17, weight="bold"),
-            text_color=TEXT_TITLE
-        ).pack(anchor="w", pady=(0, 0))
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT_TITLE,
+            height=18
+        ).pack(side="left", padx=(0, 6))
 
         badge_tag = ctk.CTkLabel(
-            brand_frame,
+            row_studio,
             text="PRO CREATOR",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#0D0E12",
-            fg_color=ORANGE_PRIMARY,
+            font=ctk.CTkFont(size=8, weight="bold"),
+            text_color=("#C2410C", "#FF8C26"),
+            fg_color=("#FFEDD5", "#26170E"),
             corner_radius=4,
-            padx=7,
-            pady=2
+            padx=5,
+            pady=0,
+            height=16
         )
-        badge_tag.pack(anchor="w", pady=(8, 0))
+        badge_tag.pack(side="left")
 
         # Divider
         ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=14, pady=12)

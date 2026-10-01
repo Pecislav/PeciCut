@@ -75,7 +75,7 @@ Aplikaci lze snadno zabalit do jednoho spustitelného balíčku bez nutnosti mí
 ### macOS (.app):
 ```bash
 pyinstaller --noconfirm --onedir --windowed \
-  --name "PecislavStudio" \
+  --name "Pecislav Studio" \
   --add-data "models:models" \
   --add-data "assets:assets" \
   main_gui.py
@@ -84,13 +84,13 @@ pyinstaller --noconfirm --onedir --windowed \
 ### Windows (.exe):
 ```bash
 pyinstaller --noconfirm --onedir --windowed ^
-  --name "PecislavStudio" ^
+  --name "Pecislav Studio" ^
   --add-data "models;models" ^
   --add-data "assets;assets" ^
   main_gui.py
 ```
 
-Výsledná aplikace se vytvoří ve složce `dist/PecislavStudio`.
+Výsledná aplikace se vytvoří ve složce `dist/Pecislav Studio`.
 
 ---
 
