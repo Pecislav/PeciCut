@@ -770,8 +770,8 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
 
         title = "Historie projektů • Pecislav Studio" if self.current_lang == "cs" else "Project History • Pecislav Studio"
         self.title(title)
-        self.geometry("920x620")
-        self.minsize(820, 480)
+        self.geometry("960x620")
+        self.minsize(940, 500)
         self.configure(fg_color=BG_WINDOW)
         self.transient(parent)
         self.grab_set()
@@ -1016,9 +1016,9 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             hover_color=ORANGE_HOVER,
             text_color="#FFFFFF",
             corner_radius=6,
-            width=140
+            width=130
         )
-        btn_open.pack(side="left", padx=(0, 8))
+        btn_open.pack(side="left", padx=(0, 6))
 
         if output_path and Path(output_path).parent.is_dir():
             t_f = "Složka" if self.current_lang == "cs" else "Folder"
@@ -1027,7 +1027,7 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
                 text=t_f,
                 command=lambda p=Path(output_path).parent: self.parent_app._open_folder(p),
                 height=34,
-                width=72,
+                width=66,
                 font=ctk.CTkFont(size=11, weight="bold"),
                 fg_color=BG_CARD,
                 hover_color=("#E5E7EB", "#252834"),
@@ -1036,7 +1036,7 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
                 border_color=BORDER_CARD,
                 corner_radius=6
             )
-            btn_folder.pack(side="left", padx=(0, 8))
+            btn_folder.pack(side="left", padx=(0, 6))
 
         t_del = "Smazat" if self.current_lang == "cs" else "Delete"
         btn_del = ctk.CTkButton(
@@ -1044,7 +1044,7 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             text=t_del,
             command=lambda it=item: self._confirm_and_delete_item(it),
             height=34,
-            width=72,
+            width=66,
             font=ctk.CTkFont(size=11),
             fg_color=BG_CARD,
             hover_color=("#FEE2E2", "#3B1818"),
@@ -1075,9 +1075,9 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
             cut_str = "Připraveno k sestřihu" if self.current_lang == "cs" else "Ready to cut"
 
         if self.current_lang == "cs":
-            det = f"{date_str}   •   {segs} momentů   •   Původní: {dur_in:.1f} min   •   {cut_str}"
+            det = f"{date_str}  •  {segs} momentů  •  Původní: {dur_in:.1f} min  •  {cut_str}"
         else:
-            det = f"{date_str}   •   {segs} clips   •   Original: {dur_in:.1f} min   •   {cut_str}"
+            det = f"{date_str}  •  {segs} clips  •  Original: {dur_in:.1f} min  •  {cut_str}"
         ctk.CTkLabel(
             left,
             text=det,
@@ -1179,7 +1179,7 @@ class AutoClipApp(BaseApp):
         # Window settings
         self.title(self.tr("app_title"))
         self.geometry("1080x860")
-        self.minsize(1020, 720)
+        self.minsize(1060, 720)
         self.configure(fg_color=BG_WINDOW)
         self._set_app_icon()
         self.after(50, self._apply_windows_titlebar_theme)
@@ -1740,7 +1740,7 @@ class AutoClipApp(BaseApp):
 
         self.lang_menu = ctk.CTkOptionMenu(
             l_inner,
-            values=["🇬🇧 English", "🇨🇿 Čeština"],
+            values=["English", "Čeština"],
             command=self._on_language_select,
             width=200,
             height=34,
@@ -1756,7 +1756,7 @@ class AutoClipApp(BaseApp):
             text_color="#FFFFFF"
         )
         self.lang_menu.pack(side="right")
-        self.lang_menu.set("🇬🇧 English" if self.current_language == "en" else "🇨🇿 Čeština")
+        self.lang_menu.set("English" if self.current_language == "en" else "Čeština")
 
         # ---------------------------------------------------------------------
         # 3. Výchozí export a chování složek
@@ -2139,7 +2139,7 @@ class AutoClipApp(BaseApp):
             if hasattr(self, "lbl_lang_select"):
                 self.lbl_lang_select.configure(text=self.tr("lbl_select_language"))
             if hasattr(self, "lang_menu"):
-                self.lang_menu.set("🇬🇧 English" if self.current_language == "en" else "🇨🇿 Čeština")
+                self.lang_menu.set("English" if self.current_language == "en" else "Čeština")
 
         if hasattr(self, "lbl_export_title"):
             self.lbl_export_title.configure(text=self.tr("card_export_title"))
