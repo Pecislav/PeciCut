@@ -471,7 +471,7 @@ ORANGE_ACCENT_TEXT = ("#D95A00", "#FF8C26") # Oranžový text pro hodnoty a čí
 
 TEXT_TITLE = ("#111827", "#FFFFFF")         # Text nadpisů (téměř černý / bílý)
 TEXT_BODY = ("#4B5563", "#9FA6B3")          # Tlumený text popisků
-TEXT_MUTED = ("#6B7280", "#606675")         # Pomocné texty a tipy
+TEXT_MUTED = ("#596172", "#8A92A2")         # Pomocné texty a tipy (vylepšený kontrast pro Light i Dark)
 TEXT_REC = ("#C25E00", "#E08A3C")           # Teplá oranžovo-zlatá pro doporučení
 TRACK_COLOR = ("#E5E7EB", "#242630")        # Pozadí dráhy sliderů a progress baru
 BORDER_SUBTLE = ("#CBD5E1", "#363947")      # Ohraničení tlačítek a přepínačů
@@ -1451,16 +1451,47 @@ class AutoClipApp(BaseApp):
         self.sidebar_frame.pack(side="left", fill="y", padx=0, pady=0)
         self.sidebar_frame.pack_propagate(False)
 
-        # Brand header without logo, large prominent typography
+        # Brand header with two-line title aligned with logo
         brand_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        brand_frame.pack(fill="x", padx=18, pady=(22, 14))
+        brand_frame.pack(fill="x", padx=16, pady=(20, 14))
+
+        brand_top_row = ctk.CTkFrame(brand_frame, fg_color="transparent")
+        brand_top_row.pack(fill="x")
+
+        # Studio logo if present
+        assets_dir = get_base_dir() / "assets"
+        logo_path = assets_dir / "logo.png"
+        if not logo_path.is_file():
+            logo_path = assets_dir / "app_icon.png"
+
+        self.logo_image = None
+        if logo_path.is_file():
+            try:
+                from PIL import Image
+                pil_img = Image.open(logo_path)
+                self.logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(38, 38))
+                lbl_logo = ctk.CTkLabel(brand_top_row, text="", image=self.logo_image)
+                lbl_logo.pack(side="left", padx=(0, 10))
+            except Exception:
+                pass
+
+        # Two-line brand typography (Pecislav on top, Studio underneath)
+        brand_text_box = ctk.CTkFrame(brand_top_row, fg_color="transparent")
+        brand_text_box.pack(side="left", fill="both", expand=True)
 
         ctk.CTkLabel(
-            brand_frame,
-            text="Pecislav Studio",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            brand_text_box,
+            text="Pecislav",
+            font=ctk.CTkFont(size=17, weight="bold"),
             text_color=TEXT_TITLE
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(0, 0))
+
+        ctk.CTkLabel(
+            brand_text_box,
+            text="Studio",
+            font=ctk.CTkFont(size=17, weight="bold"),
+            text_color=TEXT_TITLE
+        ).pack(anchor="w", pady=(0, 0))
 
         badge_tag = ctk.CTkLabel(
             brand_frame,
@@ -1472,7 +1503,7 @@ class AutoClipApp(BaseApp):
             padx=7,
             pady=2
         )
-        badge_tag.pack(anchor="w", pady=(6, 0))
+        badge_tag.pack(anchor="w", pady=(8, 0))
 
         # Divider
         ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=14, pady=12)
@@ -2972,13 +3003,14 @@ del "%~f0"
         return getattr(event, "action", "copy") if event else "copy"
 
     def _show_dim_overlay(self, title: Optional[str] = None, subtitle: Optional[str] = None):
-        """Zobrazí tmavou neprůhlednou vrstvu přes hlavní okno s kartou informující o otevřeném editoru či dialogu."""
+        """Zobrazí elegantní poloprůhledný závoj přes hlavní okno s kartou informující o otevřeném editoru či dialogu."""
         self._hide_dim_overlay()
         try:
             self.update_idletasks()
+            # Ve světlém režimu jemný světlý závoj (#E5E8EB), v tmavém hluboká černá (#0B0C10)
             self._dim_overlay = ctk.CTkFrame(
                 self,
-                fg_color=("#0B0C10", "#0B0C10"),
+                fg_color=("#E5E8EB", "#0B0C10"),
                 corner_radius=0
             )
             self._dim_overlay.place(relx=0, rely=0, relwidth=1.0, relheight=1.0)
@@ -2986,10 +3018,10 @@ del "%~f0"
 
             card = ctk.CTkFrame(
                 self._dim_overlay,
-                fg_color=("#181A22", "#181A22"),
-                corner_radius=12,
+                fg_color=("#FFFFFF", "#181A22"),
+                corner_radius=14,
                 border_width=1,
-                border_color=("#2B2E3B", "#2B2E3B")
+                border_color=("#CBD5E1", "#2B2E3B")
             )
             card.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -3000,18 +3032,25 @@ del "%~f0"
 
             ctk.CTkLabel(
                 card,
+                text="◈",
+                font=ctk.CTkFont(size=20, weight="bold"),
+                text_color=ORANGE_PRIMARY
+            ).pack(padx=40, pady=(22, 2))
+
+            ctk.CTkLabel(
+                card,
                 text=title_txt,
                 font=ctk.CTkFont(size=17, weight="bold"),
-                text_color="#F9FAFB"
-            ).pack(padx=40, pady=(26, 6))
+                text_color=TEXT_TITLE
+            ).pack(padx=40, pady=(0, 6))
 
             ctk.CTkLabel(
                 card,
                 text=sub_txt,
                 font=ctk.CTkFont(size=12),
-                text_color="#9CA3AF",
+                text_color=TEXT_BODY,
                 justify="center"
-            ).pack(padx=40, pady=(0, 26))
+            ).pack(padx=40, pady=(0, 24))
         except Exception:
             pass
 

@@ -58,7 +58,7 @@ BD_CARD_T    = ("#E5E7EB", "#2B2E3B")
 BD_ACT_T     = ("#EA580C", "#FF6B00")
 TXT_TITLE_T  = ("#111827", "#F9FAFB")
 TXT_BODY_T   = ("#4B5563", "#9CA3AF")
-TXT_MUTED_T  = ("#6B7280", "#6B7280")
+TXT_MUTED_T  = ("#6B7280", "#9CA3AF")
 OBG_T        = ("#FFF7ED", "#26170E")
 BADGE_BG_T   = ("#FEF3C7", "#2D2411")
 BADGE_FG_T   = ("#D97706", "#FBBF24")
@@ -232,12 +232,32 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         self._center()
         self._set_app_icon()
+        self._resolve_theme_colors()
         self.after(50, self._apply_windows_titlebar_theme)
         self._build()
         self._update_summary()
 
         if self.segs:
             self.after(80, lambda: self._select(0))
+
+    def _resolve_theme_colors(self):
+        """Resolves dynamic colors for Tk canvas and native Tk rows matching current appearance mode."""
+        mode = ctk.get_appearance_mode().lower()
+        self.is_dark = (mode == "dark")
+
+        self.c_bg_win = "#14151B" if self.is_dark else "#F8F9FA"
+        self.c_bg_card = "#181A22" if self.is_dark else "#FFFFFF"
+        self.c_bg_row = "#1E2028" if self.is_dark else "#F3F4F6"
+        self.c_bg_row_sel = "#231B15" if self.is_dark else "#FFF7ED"
+        self.c_bd_row = "#2B2E3B" if self.is_dark else "#E5E7EB"
+        self.c_bd_row_sel = "#FF6B00" if self.is_dark else "#EA580C"
+
+        self.c_txt_main = "#F9FAFB" if self.is_dark else "#111827"
+        self.c_txt_body = "#9CA3AF" if self.is_dark else "#4B5563"
+        self.c_txt_muted = "#9CA3AF" if self.is_dark else "#6B7280"
+
+        self.c_pbtn_bg = "#242632" if self.is_dark else "#E5E7EB"
+        self.c_pbtn_sel_bg = "#302620" if self.is_dark else "#FED7AA"
 
     # ------------------------------------------------------------------
     def _set_app_icon(self):
@@ -354,7 +374,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         pi.pack(padx=12, pady=6)
 
         self._lbl_count = ctk.CTkLabel(pi, text="", font=ctk.CTkFont(size=12, weight="bold"),
-                                        text_color=("EA580C", "#FF8533"))
+                                        text_color=("#EA580C", "#FF8533"))
         self._lbl_count.pack(anchor="e")
         self._lbl_dur = ctk.CTkLabel(pi, text="", font=ctk.CTkFont(size=11), text_color=TXT_BODY_T)
         self._lbl_dur.pack(anchor="e")
@@ -381,7 +401,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         self._lbl_ptc = ctk.CTkLabel(th, text="00:00 -> 00:00",
                                       font=ctk.CTkFont(size=11, weight="bold"),
-                                      text_color=("EA580C", "#FF8533"))
+                                      text_color=("#EA580C", "#FF8533"))
         self._lbl_ptc.pack(side="right")
 
         # Video canvas
@@ -476,7 +496,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         self._list_canvas = tk.Canvas(
             lf,
-            bg=BG_CARD,
+            bg=self.c_bg_card,
             highlightthickness=0,
         )
         self._list_canvas.pack(side="left", fill="both", expand=True)
@@ -493,7 +513,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._list_canvas.configure(yscrollcommand=sb_v.set)
 
         # Vnější frame uvnitř canvasu (pro embed checkboxů)
-        self._inner_frame = tk.Frame(self._list_canvas, bg=BG_CARD)
+        self._inner_frame = tk.Frame(self._list_canvas, bg=self.c_bg_card)
         self._inner_frame_id = self._list_canvas.create_window(
             0, 0, window=self._inner_frame, anchor="nw")
 
@@ -529,12 +549,12 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             is_rec = (round(start, 2), round(end, 2)) in self._rec_set
 
             # Řádkový frame (tk.Frame = nativní, bez CTk overhead)
-            row_f = tk.Frame(self._inner_frame, bg=BG_ROW, bd=1, relief="flat",
-                             highlightbackground=BD_ROW, highlightthickness=1, height=ROW_H)
+            row_f = tk.Frame(self._inner_frame, bg=self.c_bg_row, bd=1, relief="flat",
+                             highlightbackground=self.c_bd_row, highlightthickness=1, height=ROW_H)
             row_f.pack(fill="x", padx=4, pady=2)
             row_f.pack_propagate(False)
 
-            inner = tk.Frame(row_f, bg=BG_ROW)
+            inner = tk.Frame(row_f, bg=self.c_bg_row)
             inner.pack(fill="both", expand=True, padx=6, pady=4)
 
             # Checkbox
@@ -542,8 +562,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             self._chk_vars.append(var)
 
             chk = tk.Checkbutton(
-                inner, variable=var, bg=BG_ROW, activebackground=BG_ROW,
-                selectcolor=BG_ROW,
+                inner, variable=var, bg=self.c_bg_row, activebackground=self.c_bg_row,
+                selectcolor=self.c_bg_row,
                 fg=ORANGE, activeforeground=ORANGE,
                 command=lambda idx=i: self._on_chk(idx),
                 relief="flat", bd=0, highlightthickness=0, cursor="hand2")
@@ -554,13 +574,13 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             ai_tag = "  AI" if is_rec else ""
             txt = (f"#{i+1:02d}  {fmt_t(start)} -> {fmt_t(end)}  "
                    f"({dur:.1f}s)  {peak:.1f}dB{ai_tag}")
-            lbl = tk.Label(inner, text=txt, bg=BG_ROW, fg=TXT_MAIN,
+            lbl = tk.Label(inner, text=txt, bg=self.c_bg_row, fg=self.c_txt_main,
                            font=("Helvetica", 11), anchor="w", cursor="hand2")
             lbl.pack(side="left", fill="x", expand=True)
 
-            # Play tlačítko – tk.Label místo tk.Button, aby na macOS/Windows nebyla bílá systémová kapsle
+            # Play tlačítko – tk.Label místo tk.Button, s dynamickým pozadím pro Light i Dark režim
             pbtn = tk.Label(
-                inner, text=" ▶ ", bg="#242632", fg=ORANGE,
+                inner, text=" ▶ ", bg=self.c_pbtn_bg, fg=ORANGE,
                 font=("Helvetica", 10, "bold"), relief="flat", bd=0,
                 cursor="hand2", padx=6, pady=2
             )
@@ -568,7 +588,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             pbtn.bind("<Button-1>", lambda _, idx=i: self._sel_and_play(idx))
             pbtn.bind("<Enter>", lambda _, b=pbtn: b.configure(bg=ORANGE, fg="#FFFFFF"))
             pbtn.bind("<Leave>", lambda _, b=pbtn, idx=i: b.configure(
-                bg="#302620" if idx == self._sel else "#242632",
+                bg=self.c_pbtn_sel_bg if idx == self._sel else self.c_pbtn_bg,
                 fg=ORANGE
             ))
 
@@ -585,13 +605,13 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
     def _highlight_row(self, idx: int, selected: bool):
         row = self._row_items[idx]
-        bg = BG_ROW_SEL if selected else BG_ROW
-        bd = BD_ROW_SEL if selected else BD_ROW
+        bg = self.c_bg_row_sel if selected else self.c_bg_row
+        bd = self.c_bd_row_sel if selected else self.c_bd_row
         row["frame"].configure(bg=bg, highlightbackground=bd)
         row["inner"].configure(bg=bg)
         row["lbl"].configure(bg=bg)
         row["chk"].configure(bg=bg, activebackground=bg, selectcolor=bg)
-        btn_bg = "#302620" if selected else "#242632"
+        btn_bg = self.c_pbtn_sel_bg if selected else self.c_pbtn_bg
         row["pbtn"].configure(bg=btn_bg, fg=ORANGE)
 
     def _build_toolbar(self, parent):
