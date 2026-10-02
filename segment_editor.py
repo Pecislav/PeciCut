@@ -35,30 +35,32 @@ _MODE = ctk.get_appearance_mode()  # "Dark" nebo "Light"
 def _c(light: str, dark: str) -> str:
     return dark if ctk.get_appearance_mode() == "Dark" else light
 
-BG_WIN       = _c("#F8F9FA", "#14151B")
-BG_CARD      = _c("#FFFFFF", "#181A22")
-BG_ROW       = _c("#F3F4F6", "#1E2028")
-BG_ROW_SEL   = _c("#FFF7ED", "#231B15")
-BD_ROW       = _c("#E5E7EB", "#2B2E3B")
-BD_ROW_SEL   = _c("#EA580C", "#FF6B00")
-ORANGE       = "#FF6B00"
-ORANGE_HV    = "#E05D00"
+BG_WIN       = _c("#F0F2F5", "#0F1013")
+BG_CARD      = _c("#FFFFFF", "#181920")
+BG_ROW       = _c("#F8F9FA", "#141519")
+BG_ROW_SEL   = _c("#FFF7ED", "#24170E")
+BD_ROW       = _c("#E2E4E8", "#232530")
+BD_ROW_SEL   = "#FF6D00"
+ORANGE       = "#FF6D00"
+ORANGE_HV    = "#E66200"
 TXT_MAIN     = _c("#111827", "#F9FAFB")
-TXT_MUTED    = _c("#6B7280", "#9CA3AF")
+TXT_MUTED    = _c("#6B7280", "#71717A")
 TXT_BODY     = _c("#4B5563", "#9CA3AF")
-TXT_ORANGE   = _c("#EA580C", "#FF8533")
+TXT_ORANGE   = "#FF6D00"
 BADGE_AI_BG  = _c("#FEF3C7", "#2D2411")
 BADGE_AI_FG  = _c("#D97706", "#FBBF24")
+CHIP_BG      = _c("#EDF0F4", "#1E2028")
 BG_PLAYER    = "#0B0C10"
 
 # CTkFrame-kompatibilní tuple barvy pro widgety mimo Canvas
-BG_CARD_T    = ("#FFFFFF", "#181A22")
-BG_INNER_T   = ("#F3F4F6", "#1E2028")
-BD_CARD_T    = ("#E5E7EB", "#2B2E3B")
-BD_ACT_T     = ("#EA580C", "#FF6B00")
+BG_WIN_T     = ("#F0F2F5", "#0F1013")
+BG_CARD_T    = ("#FFFFFF", "#181920")
+BG_INNER_T   = ("#F8F9FA", "#141519")
+BD_CARD_T    = ("#E2E4E8", "#232530")
+BD_ACT_T     = ("#FF6D00", "#FF6D00")
 TXT_TITLE_T  = ("#111827", "#F9FAFB")
 TXT_BODY_T   = ("#4B5563", "#9CA3AF")
-TXT_MUTED_T  = ("#6B7280", "#9CA3AF")
+TXT_MUTED_T  = ("#6B7280", "#71717A")
 OBG_T        = ("#FFF7ED", "#26170E")
 BADGE_BG_T   = ("#FEF3C7", "#2D2411")
 BADGE_FG_T   = ("#D97706", "#FBBF24")
@@ -74,7 +76,7 @@ DISP_MS  = 50          # Display timer interval (~20 Hz) - volný pro UI
 # ---------------------------------------------------------------------------
 # Canvas seznam - geometrie jednoho řádku
 # ---------------------------------------------------------------------------
-ROW_H     = 44          # výška jednoho řádku v px
+ROW_H     = 48          # výška jednoho řádku v px
 ROW_PAD_X = 10
 ROW_PAD_Y = 3
 
@@ -245,19 +247,23 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         mode = ctk.get_appearance_mode().lower()
         self.is_dark = (mode == "dark")
 
-        self.c_bg_win = "#14151B" if self.is_dark else "#F8F9FA"
-        self.c_bg_card = "#181A22" if self.is_dark else "#FFFFFF"
-        self.c_bg_row = "#1E2028" if self.is_dark else "#F3F4F6"
-        self.c_bg_row_sel = "#231B15" if self.is_dark else "#FFF7ED"
-        self.c_bd_row = "#2B2E3B" if self.is_dark else "#E5E7EB"
-        self.c_bd_row_sel = "#FF6B00" if self.is_dark else "#EA580C"
+        self.c_bg_win = "#0F1013" if self.is_dark else "#F0F2F5"
+        self.c_bg_card = "#181920" if self.is_dark else "#FFFFFF"
+        self.c_bg_row = "#141519" if self.is_dark else "#F8F9FA"
+        self.c_bg_row_sel = "#24170E" if self.is_dark else "#FFF7ED"
+        self.c_bd_row = "#232530" if self.is_dark else "#E2E4E8"
+        self.c_bd_row_sel = ORANGE
 
         self.c_txt_main = "#F9FAFB" if self.is_dark else "#111827"
         self.c_txt_body = "#9CA3AF" if self.is_dark else "#4B5563"
-        self.c_txt_muted = "#9CA3AF" if self.is_dark else "#6B7280"
+        self.c_txt_muted = "#71717A" if self.is_dark else "#6B7280"
 
-        self.c_pbtn_bg = "#242632" if self.is_dark else "#E5E7EB"
-        self.c_pbtn_sel_bg = "#302620" if self.is_dark else "#FED7AA"
+        self.c_chip_bg = "#1E2028" if self.is_dark else "#EDF0F4"
+        self.c_badge_ai_bg = "#2D2411" if self.is_dark else "#FEF3C7"
+        self.c_badge_ai_fg = "#FBBF24" if self.is_dark else "#D97706"
+
+        self.c_pbtn_bg = "#1E2028" if self.is_dark else "#E5E7EB"
+        self.c_pbtn_sel_bg = "#361D0C" if self.is_dark else "#FFEDD5"
 
     # ------------------------------------------------------------------
     def _set_app_icon(self):
@@ -382,32 +388,32 @@ class SegmentReviewDialog(ctk.CTkToplevel):
     # --- Levý panel: Přehrávač ---
 
     def _build_player(self, parent):
-        box = ctk.CTkFrame(parent, width=488, corner_radius=10, fg_color=BG_CARD_T,
+        box = ctk.CTkFrame(parent, width=488, corner_radius=12, fg_color=BG_CARD_T,
                            border_width=1, border_color=BD_CARD_T)
         box.pack(side="left", fill="y", padx=(0, 8))
         box.pack_propagate(False)
 
         p = ctk.CTkFrame(box, fg_color="transparent")
-        p.pack(fill="both", expand=True, padx=10, pady=10)
+        p.pack(fill="both", expand=True, padx=12, pady=12)
 
         # Titulek
         th = ctk.CTkFrame(p, fg_color="transparent")
-        th.pack(fill="x", pady=(0, 6))
+        th.pack(fill="x", pady=(0, 8))
 
-        self._lbl_ptitle = ctk.CTkLabel(th, text="Moment #01",
+        self._lbl_ptitle = ctk.CTkLabel(th, text="● Moment #01",
                                          font=ctk.CTkFont(size=14, weight="bold"),
                                          text_color=TXT_TITLE_T)
         self._lbl_ptitle.pack(side="left")
 
-        self._lbl_ptc = ctk.CTkLabel(th, text="00:00 -> 00:00",
-                                      font=ctk.CTkFont(size=11, weight="bold"),
-                                      text_color=("#EA580C", "#FF8533"))
+        self._lbl_ptc = ctk.CTkLabel(th, text="00:00  →  00:00",
+                                      font=ctk.CTkFont(size=12, weight="bold"),
+                                      text_color=ORANGE)
         self._lbl_ptc.pack(side="right")
 
         # Video canvas
-        sc = ctk.CTkFrame(p, fg_color=BG_PLAYER, corner_radius=6,
+        sc = ctk.CTkFrame(p, fg_color=BG_PLAYER, corner_radius=8,
                           border_width=1, border_color=BD_CARD_T)
-        sc.pack(fill="x", pady=(0, 6))
+        sc.pack(fill="x", pady=(0, 8))
 
         self._vcanvas = ctk.CTkCanvas(sc, width=PREV_W, height=PREV_H,
                                        bg="#000000", highlightthickness=0, cursor="hand2")
@@ -416,10 +422,10 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         # Scrubber
         sb = ctk.CTkFrame(p, fg_color="transparent")
-        sb.pack(fill="x", pady=(0, 6))
+        sb.pack(fill="x", pady=(0, 8))
 
-        self._lbl_ct = ctk.CTkLabel(sb, text="00:00", font=ctk.CTkFont(size=10, weight="bold"),
-                                     text_color=TXT_TITLE_T, width=42)
+        self._lbl_ct = ctk.CTkLabel(sb, text="00:00", font=ctk.CTkFont(size=11, weight="bold"),
+                                     text_color=TXT_TITLE_T, width=44)
         self._lbl_ct.pack(side="left")
 
         self._pbar = ctk.CTkProgressBar(sb, height=6, progress_color=ORANGE,
@@ -427,8 +433,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._pbar.pack(side="left", fill="x", expand=True, padx=6)
         self._pbar.set(0.0)
 
-        self._lbl_tt = ctk.CTkLabel(sb, text="00:00", font=ctk.CTkFont(size=10),
-                                     text_color=TXT_MUTED_T, width=42)
+        self._lbl_tt = ctk.CTkLabel(sb, text="00:00", font=ctk.CTkFont(size=11),
+                                     text_color=TXT_MUTED_T, width=44)
         self._lbl_tt.pack(side="right")
 
         # Tlačítka přehrávače: velké Play/Pause vlevo + zvětšit vpravo
@@ -438,52 +444,63 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._btn_pp = ctk.CTkButton(
             cb, text="Přehrát náhled" if self.lang == "cs" else "Play Preview",
             image=self._icon_play, compound="left",
-            command=self._toggle_play, height=36, font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=ORANGE, hover_color=ORANGE_HV, text_color="#FFF", corner_radius=6)
+            command=self._toggle_play, height=38, font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=ORANGE, hover_color=ORANGE_HV, text_color="#FFF", corner_radius=8)
         self._btn_pp.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
         self._btn_ext = ctk.CTkButton(
-            cb, text="", image=self._icon_expand, command=self._ext_player, height=36, width=42,
+            cb, text="", image=self._icon_expand, command=self._ext_player, height=38, width=44,
             fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#252834"),
-            border_width=1, border_color=BD_CARD_T, corner_radius=6)
+            border_width=1, border_color=BD_CARD_T, corner_radius=8)
         self._btn_ext.pack(side="right")
 
         # Velké tlačítko zahrnutí/vynechání
         self._btn_inc = ctk.CTkButton(
-            p, text="Zahrnuto do výsledného videa" if self.lang == "cs" else "Included in Cut",
+            p, text="✓  Zahrnuto do výsledného videa" if self.lang == "cs" else "✓  Included in Cut",
             image=self._icon_check, compound="left",
             command=self._toggle_inc,
-            height=36, font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=("#E8F5E9", "#1B3320"), hover_color=("#C8E6C9", "#23472B"),
-            text_color=("#2E7D32", "#4ADE80"), border_width=1,
-            border_color=("#A5D6A7", "#2D5A37"), corner_radius=6)
-        self._btn_inc.pack(fill="x", pady=(0, 8))
+            height=38, font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=("#ECFDF5", "#062E1E"), hover_color=("#D1FAE5", "#0F4733"),
+            text_color=("#059669", "#34D399"), border_width=1,
+            border_color=("#10B981", "#059669"), corner_radius=8)
+        self._btn_inc.pack(fill="x", pady=(0, 10))
 
-        # Info box
-        ib = ctk.CTkFrame(p, fg_color=BG_INNER_T, corner_radius=6,
+        # Info box – elegantní strukturované metriky momentu
+        ib = ctk.CTkFrame(p, fg_color=BG_INNER_T, corner_radius=8,
                           border_width=1, border_color=BD_CARD_T)
         ib.pack(fill="both", expand=True)
 
         ibi = ctk.CTkFrame(ib, fg_color="transparent")
-        ibi.pack(fill="both", padx=10, pady=8)
+        ibi.pack(fill="both", expand=True, padx=12, pady=10)
 
-        self._lbl_loud = ctk.CTkLabel(ibi, text="Hlasitost: -",
-                                       font=ctk.CTkFont(size=12), text_color=TXT_TITLE_T)
-        self._lbl_loud.pack(anchor="w", pady=(0, 3))
+        self._lbl_loud = ctk.CTkLabel(
+            ibi, text="🔊  Hlasitost špičky: -",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TXT_TITLE_T,
+            anchor="w"
+        )
+        self._lbl_loud.pack(fill="x", pady=(0, 6))
 
-        self._lbl_face = ctk.CTkLabel(ibi, text="Facecam: N/A",
-                                       font=ctk.CTkFont(size=12), text_color=TXT_BODY_T)
-        self._lbl_face.pack(anchor="w", pady=(0, 3))
+        self._lbl_face = ctk.CTkLabel(
+            ibi, text="😊  Detekce obličeje: N/A",
+            font=ctk.CTkFont(size=12),
+            text_color=TXT_BODY_T,
+            anchor="w"
+        )
+        self._lbl_face.pack(fill="x", pady=(0, 6))
 
-        self._lbl_ai = ctk.CTkLabel(ibi, text="",
-                                     font=ctk.CTkFont(size=12, weight="bold"),
-                                     text_color=BADGE_FG_T)
-        self._lbl_ai.pack(anchor="w")
+        self._lbl_ai = ctk.CTkLabel(
+            ibi, text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=BADGE_FG_T,
+            anchor="w"
+        )
+        self._lbl_ai.pack(fill="x")
 
     # --- Pravý panel: Canvas seznam ---
 
     def _build_list(self, parent):
-        box = ctk.CTkFrame(parent, corner_radius=10, fg_color=BG_CARD_T,
+        box = ctk.CTkFrame(parent, corner_radius=12, fg_color=BG_CARD_T,
                            border_width=1, border_color=BD_CARD_T)
         box.pack(side="right", fill="both", expand=True)
 
@@ -492,7 +509,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         # Rámeček pro Canvas + scrollbar
         lf = ctk.CTkFrame(box, fg_color="transparent")
-        lf.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+        lf.pack(fill="both", expand=True, padx=8, pady=(0, 6))
 
         self._list_canvas = tk.Canvas(
             lf,
@@ -507,7 +524,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             command=self._list_canvas.yview,
             fg_color=BG_INNER_T,
             button_color=("#9CA3AF", "#3A3D4D"),
-            button_hover_color=("#6B7280", "#FF6B00"),
+            button_hover_color=("#6B7280", "#FF6D00"),
         )
         sb_v.pack(side="right", fill="y")
         self._list_canvas.configure(yscrollcommand=sb_v.set)
@@ -541,7 +558,13 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self.bind("<Down>", lambda _: self._kb_nav(1))
 
     def _build_canvas_rows(self):
-        """Vytvoří Tk widgety pro každý řádek (ne CTk - je to rychlejší)."""
+        """Vytvoří moderní strukturované řádky momentů (rychlé nativní Tk komponenty s Logi estetikou)."""
+        font_num = ("Segoe UI", 10, "bold")
+        font_time = ("Segoe UI", 10, "bold")
+        font_chip = ("Segoe UI", 9)
+        font_ai = ("Segoe UI", 9, "bold")
+        font_pbtn = ("Segoe UI", 10, "bold")
+
         for i, seg in enumerate(self.segs):
             start, end = seg[0], seg[1]
             dur = max(0.1, end - start)
@@ -549,42 +572,122 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             is_rec = (round(start, 2), round(end, 2)) in self._rec_set
 
             # Řádkový frame (tk.Frame = nativní, bez CTk overhead)
-            row_f = tk.Frame(self._inner_frame, bg=self.c_bg_row, bd=1, relief="flat",
-                             highlightbackground=self.c_bd_row, highlightthickness=1, height=ROW_H)
-            row_f.pack(fill="x", padx=4, pady=2)
+            row_f = tk.Frame(
+                self._inner_frame,
+                bg=self.c_bg_row,
+                bd=0,
+                highlightbackground=self.c_bd_row,
+                highlightthickness=1,
+                height=ROW_H
+            )
+            row_f.pack(fill="x", padx=6, pady=2)
             row_f.pack_propagate(False)
 
             inner = tk.Frame(row_f, bg=self.c_bg_row)
-            inner.pack(fill="both", expand=True, padx=6, pady=4)
+            inner.pack(fill="both", expand=True, padx=4, pady=3)
 
-            # Checkbox
+            # 1. Left accent bar indicator (oranžový pruh při aktivním výběru)
+            ind = tk.Frame(inner, width=3, bg=self.c_bg_row)
+            ind.pack(side="left", fill="y", padx=(2, 6))
+
+            # 2. Checkbox
             var = tk.BooleanVar(value=self._inc[i])
             self._chk_vars.append(var)
 
             chk = tk.Checkbutton(
-                inner, variable=var, bg=self.c_bg_row, activebackground=self.c_bg_row,
+                inner,
+                variable=var,
+                bg=self.c_bg_row,
+                activebackground=self.c_bg_row,
                 selectcolor=self.c_bg_row,
-                fg=ORANGE, activeforeground=ORANGE,
+                fg=ORANGE,
+                activeforeground=ORANGE,
                 command=lambda idx=i: self._on_chk(idx),
-                relief="flat", bd=0, highlightthickness=0, cursor="hand2")
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                cursor="hand2"
+            )
             chk.pack(side="left", padx=(0, 4))
             self._chk_widgets.append(chk)
 
-            # Text label
-            ai_tag = "  AI" if is_rec else ""
-            txt = (f"#{i+1:02d}  {fmt_t(start)} -> {fmt_t(end)}  "
-                   f"({dur:.1f}s)  {peak:.1f}dB{ai_tag}")
-            lbl = tk.Label(inner, text=txt, bg=self.c_bg_row, fg=self.c_txt_main,
-                           font=("Helvetica", 11), anchor="w", cursor="hand2")
-            lbl.pack(side="left", fill="x", expand=True)
-
-            # Play tlačítko – tk.Label místo tk.Button, s dynamickým pozadím pro Light i Dark režim
-            pbtn = tk.Label(
-                inner, text=" ▶ ", bg=self.c_pbtn_bg, fg=ORANGE,
-                font=("Helvetica", 10, "bold"), relief="flat", bd=0,
-                cursor="hand2", padx=6, pady=2
+            # 3. Číslo momentu (#01, #02, ...)
+            lbl_num = tk.Label(
+                inner,
+                text=f"#{i+1:02d}",
+                bg=self.c_bg_row,
+                fg=self.c_txt_muted,
+                font=font_num,
+                width=4,
+                anchor="w",
+                cursor="hand2"
             )
-            pbtn.pack(side="right", padx=(4, 0))
+            lbl_num.pack(side="left", padx=(0, 6))
+
+            # 4. Časový rozsah se šipkou
+            lbl_time = tk.Label(
+                inner,
+                text=f"{fmt_t(start)}  →  {fmt_t(end)}",
+                bg=self.c_bg_row,
+                fg=self.c_txt_main,
+                font=font_time,
+                anchor="w",
+                cursor="hand2"
+            )
+            lbl_time.pack(side="left", padx=(0, 8))
+
+            # 5. Délka v chipu
+            lbl_dur = tk.Label(
+                inner,
+                text=f" {dur:.1f}s ",
+                bg=self.c_chip_bg,
+                fg=self.c_txt_body,
+                font=font_chip,
+                relief="flat",
+                cursor="hand2"
+            )
+            lbl_dur.pack(side="left", padx=(0, 6))
+
+            # 6. Špička hlasitosti v chipu
+            lbl_peak = tk.Label(
+                inner,
+                text=f" {peak:.1f} dB ",
+                bg=self.c_chip_bg,
+                fg=self.c_txt_muted,
+                font=font_chip,
+                relief="flat",
+                cursor="hand2"
+            )
+            lbl_peak.pack(side="left", padx=(0, 6))
+
+            # 7. AI doporučení badge
+            lbl_ai = None
+            if is_rec:
+                lbl_ai = tk.Label(
+                    inner,
+                    text=" ★ AI ",
+                    bg=self.c_badge_ai_bg,
+                    fg=self.c_badge_ai_fg,
+                    font=font_ai,
+                    relief="flat",
+                    cursor="hand2"
+                )
+                lbl_ai.pack(side="left", padx=(0, 4))
+
+            # 8. Play preview tlačítko vpravo
+            pbtn = tk.Label(
+                inner,
+                text=" ▶ ",
+                bg=self.c_pbtn_bg,
+                fg=ORANGE,
+                font=font_pbtn,
+                relief="flat",
+                bd=0,
+                cursor="hand2",
+                padx=8,
+                pady=2
+            )
+            pbtn.pack(side="right", padx=(4, 2))
             pbtn.bind("<Button-1>", lambda _, idx=i: self._sel_and_play(idx))
             pbtn.bind("<Enter>", lambda _, b=pbtn: b.configure(bg=ORANGE, fg="#FFFFFF"))
             pbtn.bind("<Leave>", lambda _, b=pbtn, idx=i: b.configure(
@@ -592,49 +695,58 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                 fg=ORANGE
             ))
 
-            # Kliknutí na řádek -> výběr a plynulý scroll
-            for w in (row_f, inner, lbl):
+            # Kliknutí na řádek -> výběr
+            clickable = [row_f, inner, ind, lbl_num, lbl_time, lbl_dur, lbl_peak]
+            if lbl_ai:
+                clickable.append(lbl_ai)
+            for w in clickable:
                 w.bind("<Button-1>", lambda _, idx=i: self._select(idx))
-            for w in (row_f, inner, lbl, chk, pbtn):
+            for w in clickable + [chk, pbtn]:
                 w.bind("<MouseWheel>", self._on_wheel)
 
             self._row_items.append({
-                "frame": row_f, "inner": inner, "lbl": lbl, "chk": chk,
-                "var": var, "pbtn": pbtn
+                "frame": row_f, "inner": inner, "ind": ind,
+                "lbl_num": lbl_num, "lbl_time": lbl_time, "lbl_dur": lbl_dur,
+                "lbl_peak": lbl_peak, "lbl_ai": lbl_ai,
+                "chk": chk, "var": var, "pbtn": pbtn
             })
 
     def _highlight_row(self, idx: int, selected: bool):
+        if not (0 <= idx < len(self._row_items)):
+            return
         row = self._row_items[idx]
         bg = self.c_bg_row_sel if selected else self.c_bg_row
         bd = self.c_bd_row_sel if selected else self.c_bd_row
         row["frame"].configure(bg=bg, highlightbackground=bd)
         row["inner"].configure(bg=bg)
-        row["lbl"].configure(bg=bg)
+        row["ind"].configure(bg=ORANGE if selected else bg)
+        row["lbl_num"].configure(bg=bg, fg=ORANGE if selected else self.c_txt_muted)
+        row["lbl_time"].configure(bg=bg)
         row["chk"].configure(bg=bg, activebackground=bg, selectcolor=bg)
         btn_bg = self.c_pbtn_sel_bg if selected else self.c_pbtn_bg
         row["pbtn"].configure(bg=btn_bg, fg=ORANGE)
 
     def _build_toolbar(self, parent):
         tb = ctk.CTkFrame(parent, fg_color="transparent")
-        tb.pack(fill="x", padx=12, pady=(10, 4))
+        tb.pack(fill="x", padx=12, pady=(10, 6))
 
         def _b(txt, cmd, **kw):
-            return ctk.CTkButton(tb, text=txt, command=cmd, height=26,
-                                 font=ctk.CTkFont(size=11),
-                                 border_width=1, corner_radius=5, **kw)
+            return ctk.CTkButton(tb, text=txt, command=cmd, height=28,
+                                 font=ctk.CTkFont(size=11, weight="bold"),
+                                 border_width=1, corner_radius=6, **kw)
 
-        t_ai = "AI výběr" if self.lang == "cs" else "AI Picks"
+        t_ai = "★ AI výběr" if self.lang == "cs" else "★ AI Picks"
         _b(t_ai, self._reset_ai,
            fg_color=BADGE_BG_T, hover_color=("#FDE68A", "#3D3016"),
            text_color=BADGE_FG_T, border_color=("#F59E0B", "#B45309")
-           ).pack(side="left", padx=(0, 4))
+           ).pack(side="left", padx=(0, 6))
 
-        _b("Vše" if self.lang == "cs" else "All", self._sel_all,
+        _b("✓ Vše" if self.lang == "cs" else "✓ All", self._sel_all,
            fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#252834"),
            text_color=TXT_TITLE_T, border_color=BD_CARD_T
-           ).pack(side="left", padx=(0, 4))
+           ).pack(side="left", padx=(0, 6))
 
-        _b("Nic" if self.lang == "cs" else "None", self._desel_all,
+        _b("✕ Nic" if self.lang == "cs" else "✕ None", self._desel_all,
            fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#252834"),
            text_color=TXT_TITLE_T, border_color=BD_CARD_T
            ).pack(side="left")
@@ -656,12 +768,12 @@ class SegmentReviewDialog(ctk.CTkToplevel):
     # --- Patička ---
 
     def _build_footer(self):
-        f = ctk.CTkFrame(self, corner_radius=10, fg_color=BG_CARD_T,
+        f = ctk.CTkFrame(self, corner_radius=12, fg_color=BG_CARD_T,
                          border_width=1, border_color=BD_CARD_T)
         f.pack(fill="x", side="bottom", padx=16, pady=(0, 12))
 
         row = ctk.CTkFrame(f, fg_color="transparent")
-        row.pack(fill="x", padx=14, pady=8)
+        row.pack(fill="x", padx=14, pady=10)
 
         self._lbl_foot = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=12, weight="bold"),
                                        text_color=TXT_TITLE_T)
@@ -669,16 +781,16 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         self._btn_conf = ctk.CTkButton(
             row, text="", command=self._on_confirm,
-            height=36, width=210, font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=ORANGE, hover_color=ORANGE_HV, text_color="#FFF", corner_radius=6)
+            height=38, width=220, font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=ORANGE, hover_color=ORANGE_HV, text_color="#FFF", corner_radius=8)
         self._btn_conf.pack(side="right", padx=(8, 0))
 
         t_c = "Zrušit" if self.lang == "cs" else "Cancel"
         ctk.CTkButton(row, text=t_c, command=self._on_cancel,
-                      height=36, width=90, font=ctk.CTkFont(size=11),
+                      height=38, width=100, font=ctk.CTkFont(size=12, weight="bold"),
                       fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#2B2E3B"),
                       text_color=TXT_TITLE_T, border_width=1, border_color=BD_CARD_T,
-                      corner_radius=6).pack(side="right")
+                      corner_radius=8).pack(side="right")
 
     # ==================================================================
     # Výběr segmentu
@@ -709,8 +821,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         face = seg[3] if len(seg) >= 4 else 0.0
         is_rec = (round(start, 2), round(end, 2)) in self._rec_set
 
-        self._lbl_ptitle.configure(text=f"Moment #{idx+1:02d}")
-        self._lbl_ptc.configure(text=f"{fmt_t(start)} -> {fmt_t(end)} ({dur:.1f}s)")
+        self._lbl_ptitle.configure(text=f"● Moment #{idx+1:02d}")
+        self._lbl_ptc.configure(text=f"{fmt_t(start)}  →  {fmt_t(end)}  •  {dur:.1f}s")
         self._lbl_ct.configure(text="00:00")
         self._lbl_tt.configure(text=fmt_t(dur))
         self._pbar.set(0.0)
@@ -720,17 +832,17 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
         self._update_inc_btn(self._inc[idx])
 
-        self._lbl_loud.configure(text=f"Hlasitost spicky: {peak:.1f} dBFS")
-        fc = (f"Facecam reakce: {int(face*100)}%" if face > 0.05
+        self._lbl_loud.configure(text=f"🔊  Hlasitost špičky: {peak:.1f} dBFS")
+        fc = (f"😊  Facecam reakce: {int(face*100)}%" if face > 0.05
               else ("Facecam: Bez reakce" if self.lang == "cs"
                     else "Facecam: No reaction"))
         self._lbl_face.configure(text=fc)
 
         if is_rec:
-            ai = "AI doporuceni pro cilovou delku" if self.lang == "cs" else "AI Pick"
+            ai = "★  AI doporučení pro cílovou délku" if self.lang == "cs" else "★  AI recommended pick"
             self._lbl_ai.configure(text=ai, text_color=BADGE_FG_T)
         else:
-            ai = "Doplnkovy moment (muzete zahrnout)" if self.lang == "cs" else "Optional moment"
+            ai = "○  Doplňkový moment (volitelné)" if self.lang == "cs" else "○  Optional moment"
             self._lbl_ai.configure(text=ai, text_color=TXT_MUTED_T)
 
         # Načti náhledový snímek v bg threadu (s unikátním ID požadavku)
@@ -1094,23 +1206,29 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
     def _update_inc_btn(self, inc: bool):
         if inc:
-            t = "Zahrnuto do výsledného videa" if self.lang == "cs" else "Included in Cut"
-            self._btn_inc.configure(text=t,
-                                    image=self._icon_check,
-                                    compound="left",
-                                    fg_color=("#E8F5E9", "#1B3320"),
-                                    hover_color=("#C8E6C9", "#23472B"),
-                                    text_color=("#2E7D32", "#4ADE80"),
-                                    border_color=("#A5D6A7", "#2D5A37"))
+            t = "✓  Zahrnuto do výsledného videa" if self.lang == "cs" else "✓  Included in Cut"
+            self._btn_inc.configure(
+                text=t,
+                image=self._icon_check,
+                compound="left",
+                fg_color=("#ECFDF5", "#062E1E"),
+                hover_color=("#D1FAE5", "#0F4733"),
+                text_color=("#059669", "#34D399"),
+                border_color=("#10B981", "#059669"),
+                border_width=1
+            )
         else:
-            t = "Vynecháno (klikni pro zahrnutí)" if self.lang == "cs" else "Excluded (click to include)"
-            self._btn_inc.configure(text=t,
-                                    image=self._icon_plus,
-                                    compound="left",
-                                    fg_color=BG_INNER_T,
-                                    hover_color=("#E5E7EB", "#252834"),
-                                    text_color=TXT_MUTED_T,
-                                    border_color=BD_CARD_T)
+            t = "+  Vynecháno (kliknutím zahrnout)" if self.lang == "cs" else "+  Excluded (click to include)"
+            self._btn_inc.configure(
+                text=t,
+                image=self._icon_plus,
+                compound="left",
+                fg_color=BG_INNER_T,
+                hover_color=("#E5E7EB", "#252834"),
+                text_color=TXT_MUTED_T,
+                border_color=BD_CARD_T,
+                border_width=1
+            )
 
     def _on_chk(self, idx: int):
         self._inc[idx] = self._chk_vars[idx].get()

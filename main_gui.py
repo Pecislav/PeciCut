@@ -477,63 +477,95 @@ TEXT_REC = ("#C25E00", "#FF9933")           # Zlatavá oranžová pro doporučen
 TRACK_COLOR = ("#E5E7EB", "#242632")        # Moderní dráha posuvníků
 
 # -----------------------------------------------------------------------------
-# Slanted Theme Preview Swatches Generator (Sharp Angle Cuts)
+# Logi Options+ Studio Theme Preview Window Generator
 # -----------------------------------------------------------------------------
 
-def create_slanted_theme_image(theme_type: str, w: int = 125, h: int = 42, r: int = 7) -> Image.Image:
+def create_logi_theme_preview_image(theme_type: str, w: int = 130, h: int = 56, r: int = 8) -> Image.Image:
     """
-    Generates a crisp slanted color preview swatch without soft fade:
-    - 'system': (černá / oranžová / bílá)
-    - 'light': (oranžová / bílá)
-    - 'dark': (oranžová / černá)
+    Generates an elegant Logi Options+ style miniature studio window mockup:
+    - Titlebar with clean window dots
+    - Inner card with content placeholders
+    - Signature orange accent pill (#FF6D00)
+    - 'system': Split-screen preview (Light on left, Dark on right)
+    - 'light': Crisp clean light studio mockup
+    - 'dark': Deep matte obsidian studio mockup
     """
-    scale = 3  # 3x super-sampling for smooth anti-aliased diagonal edges
+    scale = 3
     sw, sh = w * scale, h * scale
+    sr = r * scale
+
     img = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    c_orange = (255, 109, 0, 255)
-    c_white = (248, 249, 251, 255)
-    c_black = (18, 19, 24, 255)
+    orange = (255, 109, 0, 255)
 
-    # Sharp diagonal cut (slant dx across height)
-    slant = sh * 0.45
+    def draw_window_part(box, bg_win, bg_card, border_card, bar_color, pill_color, dots_color):
+        x0, y0, x1, y1 = box
+        draw.rectangle([x0, y0, x1, y1], fill=bg_win)
 
-    if theme_type == 'system':
-        x1 = sw * 0.33
-        x2 = sw * 0.67
-        # 1. Černá (Left)
-        draw.polygon([(0, 0), (x1 + slant/2, 0), (x1 - slant/2, sh), (0, sh)], fill=c_black)
-        # 2. Oranžová (Middle)
-        draw.polygon([(x1 + slant/2, 0), (x2 + slant/2, 0), (x2 - slant/2, sh), (x1 - slant/2, sh)], fill=c_orange)
-        # 3. Bílá (Right)
-        draw.polygon([(x2 + slant/2, 0), (sw, 0), (sw, sh), (x2 - slant/2, sh)], fill=c_white)
+        # Titlebar dots (3 dots)
+        dot_r = 2.2 * scale
+        dot_y = y0 + 6.5 * scale
+        for i in range(3):
+            dx = x0 + 8 * scale + i * 6.5 * scale
+            if dx + dot_r < x1 - 4 * scale:
+                draw.ellipse([dx - dot_r, dot_y - dot_r, dx + dot_r, dot_y + dot_r], fill=dots_color)
+
+        # Card inside window
+        cx0 = x0 + 7 * scale
+        cy0 = y0 + 14 * scale
+        cx1 = x1 - 7 * scale
+        cy1 = y1 - 7 * scale
+        if cx1 > cx0 + 10 * scale and cy1 > cy0 + 10 * scale:
+            draw.rounded_rectangle([cx0, cy0, cx1, cy1], radius=4 * scale, fill=bg_card, outline=border_card, width=int(1.2 * scale))
+
+            # Orange accent pill
+            draw.rounded_rectangle([cx0 + 5 * scale, cy0 + 5 * scale, cx0 + 24 * scale, cy0 + 9 * scale], radius=2 * scale, fill=pill_color)
+            # Content bars
+            draw.rounded_rectangle([cx0 + 5 * scale, cy0 + 13 * scale, cx1 - 8 * scale, cy0 + 16 * scale], radius=1.5 * scale, fill=bar_color)
+            draw.rounded_rectangle([cx0 + 5 * scale, cy0 + 19 * scale, cx1 - 16 * scale, cy0 + 22 * scale], radius=1.5 * scale, fill=bar_color)
+
+    c_dark_win = (24, 25, 32, 255)
+    c_dark_card = (32, 34, 44, 255)
+    c_dark_bd = (46, 50, 64, 255)
+    c_dark_bar = (60, 64, 80, 255)
+    c_dark_dots = (78, 83, 104, 255)
+
+    c_light_win = (240, 242, 245, 255)
+    c_light_card = (255, 255, 255, 255)
+    c_light_bd = (226, 228, 232, 255)
+    c_light_bar = (208, 212, 220, 255)
+    c_light_dots = (184, 188, 198, 255)
+
+    if theme_type == 'dark':
+        draw_window_part((0, 0, sw, sh), c_dark_win, c_dark_card, c_dark_bd, c_dark_bar, orange, c_dark_dots)
     elif theme_type == 'light':
-        x = sw * 0.50
-        # 1. Oranžová (Left)
-        draw.polygon([(0, 0), (x + slant/2, 0), (x - slant/2, sh), (0, sh)], fill=c_orange)
-        # 2. Bílá (Right)
-        draw.polygon([(x + slant/2, 0), (sw, 0), (sw, sh), (x - slant/2, sh)], fill=c_white)
-    elif theme_type == 'dark':
-        x = sw * 0.50
-        # 1. Oranžová (Left)
-        draw.polygon([(0, 0), (x + slant/2, 0), (x - slant/2, sh), (0, sh)], fill=c_orange)
-        # 2. Černá (Right)
-        draw.polygon([(x + slant/2, 0), (sw, 0), (sw, sh), (x - slant/2, sh)], fill=c_black)
+        draw_window_part((0, 0, sw, sh), c_light_win, c_light_card, c_light_bd, c_light_bar, orange, c_light_dots)
+    elif theme_type == 'system':
+        mid_x = sw // 2
+        # Left half Light
+        draw_window_part((0, 0, mid_x, sh), c_light_win, c_light_card, c_light_bd, c_light_bar, orange, c_light_dots)
+        # Right half Dark
+        draw_window_part((mid_x, 0, sw, sh), c_dark_win, c_dark_card, c_dark_bd, c_dark_bar, orange, c_dark_dots)
+        # Divider down middle
+        draw.line([(mid_x, 0), (mid_x, sh)], fill=(120, 125, 140, 140), width=int(1.5 * scale))
 
-    # Rounded rectangle mask
+    # Mask to rounded rectangle
     mask = Image.new('L', (sw, sh), 0)
     mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=r * scale, fill=255)
+    mask_draw.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=sr, fill=255)
 
     out = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
     out.paste(img, (0, 0), mask=mask)
 
-    # Subtle inner border
+    # Subtle outer border
     draw_out = ImageDraw.Draw(out)
-    draw_out.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=r * scale, outline=(100, 105, 120, 120), width=max(1, int(1.2 * scale)))
+    draw_out.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=sr, outline=(100, 105, 120, 120), width=max(1, int(1.2 * scale)))
 
     return out.resize((w, h), Image.Resampling.LANCZOS)
+
+# Backward-compatibility alias
+create_slanted_theme_image = create_logi_theme_preview_image
 
 # -----------------------------------------------------------------------------
 # Floating Modern Tooltip (Hover Overlay - Zero Layout Shift)
@@ -1678,7 +1710,7 @@ class AutoClipApp(BaseApp):
         themes_row = ctk.CTkFrame(theme_card, fg_color="transparent")
         themes_row.pack(fill="x", padx=16, pady=(0, 16))
 
-        # 3 theme previews with sharp slanted cuts
+        # 3 theme previews with Logi Options+ miniature window mockups
         self.theme_images = {}
         theme_modes = [
             ("system", self.tr("theme_system")),
@@ -1686,8 +1718,8 @@ class AutoClipApp(BaseApp):
             ("dark", self.tr("theme_dark"))
         ]
         for mode_key, _ in theme_modes:
-            pil_img = create_slanted_theme_image(mode_key, w=125, h=42, r=7)
-            self.theme_images[mode_key] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(125, 42))
+            pil_img = create_logi_theme_preview_image(mode_key, w=130, h=56, r=8)
+            self.theme_images[mode_key] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(130, 56))
 
         self.theme_buttons = {}
         for idx, (mode_key, label_text) in enumerate(theme_modes):
@@ -1697,7 +1729,7 @@ class AutoClipApp(BaseApp):
                 text=label_text,
                 compound="top",
                 font=ctk.CTkFont(size=12, weight="bold"),
-                height=84,
+                height=96,
                 corner_radius=10,
                 fg_color=BG_CARD_INNER,
                 text_color=TEXT_TITLE,
@@ -2912,16 +2944,14 @@ del "%~f0"
         )
         self.lbl_dnd_hint.pack(anchor="w", pady=(2, 0))
 
-        # Register Drag & Drop targets across the drop zone and the window
+        # Register Drag & Drop targets across the main window
         if getattr(self, "_dnd_ready", False) and DND_FILES is not None:
             try:
-                targets = [self.drop_zone, drop_inner, path_box, self.lbl_file_path, self.lbl_dnd_hint, box, self]
-                for target in targets:
-                    target.drop_target_register(DND_FILES)
-                    target.dnd_bind('<<Drop>>', self._on_file_drop)
-                    target.dnd_bind('<<DropEnter>>', self._on_drop_enter)
-                    target.dnd_bind('<<DropPosition>>', self._on_drop_position)
-                    target.dnd_bind('<<DropLeave>>', self._on_drop_leave)
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind('<<Drop>>', self._on_file_drop)
+                self.dnd_bind('<<DropEnter>>', self._on_drop_enter)
+                self.dnd_bind('<<DropPosition>>', self._on_drop_position)
+                self.dnd_bind('<<DropLeave>>', self._on_drop_leave)
             except Exception:
                 pass
 
@@ -2938,53 +2968,60 @@ del "%~f0"
         )
         self.lbl_meta_info.pack(padx=12, pady=8, anchor="w")
 
-    def _on_drop_enter(self, event=None):
-        self._dnd_active = True
-        if hasattr(self, "drop_zone"):
+    def _is_cursor_over_drop_zone(self, event) -> bool:
+        if not hasattr(self, "drop_zone") or not self.drop_zone.winfo_exists():
+            return False
+        try:
+            rx = self.drop_zone.winfo_rootx()
+            ry = self.drop_zone.winfo_rooty()
+            rw = self.drop_zone.winfo_width()
+            rh = self.drop_zone.winfo_height()
+            x = getattr(event, "x_root", None)
+            y = getattr(event, "y_root", None)
+            if x is None or y is None:
+                return True
+            return (rx <= x <= rx + rw) and (ry <= y <= ry + rh)
+        except Exception:
+            return False
+
+    def _set_drop_zone_highlight(self, active: bool):
+        self._dnd_hover_active = active
+        if not hasattr(self, "drop_zone") or not self.drop_zone.winfo_exists():
+            return
+        if active:
             self.drop_zone.configure(
                 border_color=ORANGE_PRIMARY,
                 border_width=2,
-                fg_color=("#FFE8D6", "#28170B")
+                fg_color=("#FFEDD5", "#26170E")
             )
-        if hasattr(self, "lbl_file_path"):
-            t = "Pusťte video soubor zde pro načtení!" if self.current_language == "cs" else "Release video file here to load!"
-            self.lbl_file_path.configure(text=t, text_color=ORANGE_PRIMARY)
-        if hasattr(self, "lbl_dnd_hint"):
-            t_sub = "Aplikace video okamžitě načte a připraví" if self.current_language == "cs" else "App will immediately load and prepare video"
-            self.lbl_dnd_hint.configure(text=t_sub, text_color=TEXT_TITLE)
-        self._animate_drop_pulse(0)
-        return getattr(event, "action", "copy") if event else "copy"
-
-    def _on_drop_position(self, event=None):
-        return getattr(event, "action", "copy") if event else "copy"
-
-    def _animate_drop_pulse(self, step: int):
-        if not getattr(self, "_dnd_active", False) or not hasattr(self, "drop_zone"):
-            return
-        widths = [2, 3, 2, 1]
-        w = widths[step % len(widths)]
-        try:
-            self.drop_zone.configure(border_width=w)
-            self._pulse_job = self.after(160, lambda: self._animate_drop_pulse(step + 1))
-        except Exception:
-            pass
-
-    def _on_drop_leave(self, event=None):
-        self._dnd_active = False
-        if hasattr(self, "_pulse_job") and self._pulse_job:
-            try:
-                self.after_cancel(self._pulse_job)
-            except Exception:
-                pass
-            self._pulse_job = None
-
-        if hasattr(self, "drop_zone"):
+            if hasattr(self, "lbl_file_path"):
+                t = "Pusťte video soubor zde pro načtení!" if self.current_language == "cs" else "Release video file here to load!"
+                self.lbl_file_path.configure(text=t, text_color=ORANGE_PRIMARY)
+            if hasattr(self, "lbl_dnd_hint"):
+                t_sub = "Aplikace video okamžitě načte a připraví" if self.current_language == "cs" else "App will immediately load and prepare video"
+                self.lbl_dnd_hint.configure(text=t_sub, text_color=TEXT_TITLE)
+        else:
             self.drop_zone.configure(
                 border_color=BORDER_CARD,
                 border_width=1,
                 fg_color=BG_CARD_INNER
             )
-        self._update_drop_zone_labels()
+            self._update_drop_zone_labels()
+
+    def _on_drop_enter(self, event=None):
+        if event is not None and self._is_cursor_over_drop_zone(event):
+            self._set_drop_zone_highlight(True)
+        return getattr(event, "action", "copy") if event else "copy"
+
+    def _on_drop_position(self, event=None):
+        if event is not None:
+            over = self._is_cursor_over_drop_zone(event)
+            if over != getattr(self, "_dnd_hover_active", False):
+                self._set_drop_zone_highlight(over)
+        return getattr(event, "action", "copy") if event else "copy"
+
+    def _on_drop_leave(self, event=None):
+        self._set_drop_zone_highlight(False)
         return getattr(event, "action", "copy") if event else "copy"
 
     def _update_drop_zone_labels(self):
@@ -3070,10 +3107,10 @@ del "%~f0"
         self._hide_dim_overlay()
         try:
             self.update_idletasks()
-            # Ve světlém režimu jemný světlý závoj (#E5E8EB), v tmavém hluboká černá (#0B0C10)
+            # Ve světlém režimu jemný světlý závoj (#F0F2F5), v tmavém hluboká černá (#0F1013)
             self._dim_overlay = ctk.CTkFrame(
                 self,
-                fg_color=("#E5E8EB", "#0B0C10"),
+                fg_color=BG_WINDOW,
                 corner_radius=0
             )
             self._dim_overlay.place(relx=0, rely=0, relwidth=1.0, relheight=1.0)
@@ -3081,10 +3118,10 @@ del "%~f0"
 
             card = ctk.CTkFrame(
                 self._dim_overlay,
-                fg_color=("#FFFFFF", "#181A22"),
+                fg_color=BG_CARD,
                 corner_radius=14,
                 border_width=1,
-                border_color=("#CBD5E1", "#2B2E3B")
+                border_color=BORDER_CARD
             )
             card.place(relx=0.5, rely=0.5, anchor="center")
 
