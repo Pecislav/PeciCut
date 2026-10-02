@@ -34,6 +34,12 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+if sys.platform.startswith("win"):
+    try:
+        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+    except Exception:
+        pass
+
 
 from ffmpeg_utils import (
     download_ffmpeg_auto,
@@ -568,23 +574,23 @@ def create_logi_theme_preview_image(theme_type: str, w: int = 130, h: int = 56, 
 create_slanted_theme_image = create_logi_theme_preview_image
 
 # -----------------------------------------------------------------------------
-# Floating Modern Tooltip (Hover Overlay - Zero Layout Shift)
+# Floating Modern Tooltip (Hover Overlay - Zero Layout Shift, Rounded Card)
 # -----------------------------------------------------------------------------
 
 class ModernTooltip:
     """
     Floating overlay tooltip that appears next to a widget on hover without shifting layout.
-    Overlays gracefully above surrounding content with soft/semi-translucent typography
-    and a distinct highlighted recommendation badge.
+    Displays a modern rounded card with Segoe UI typography, distinct bullet hierarchy,
+    and an elegant warm recommendation pill.
     """
     active_tooltip: Optional['ModernTooltip'] = None
 
-    def __init__(self, widget, text: str, recommendation: Optional[str] = None, max_width: int = 400):
+    def __init__(self, widget, text: str, recommendation: Optional[str] = None, max_width: int = 420):
         self.widget = widget
         self.text = text.strip()
         self.recommendation = recommendation.strip() if recommendation else None
         self.max_width = max_width
-        self.tip_window: Optional[tk.Toplevel] = None
+        self.tip_window: Optional[ctk.CTkToplevel] = None
         self.after_id = None
         self.hide_after_id = None
 
@@ -641,84 +647,114 @@ class ModernTooltip:
 
         ModernTooltip.active_tooltip = self
 
-        self.tip_window = tw = tk.Toplevel(self.widget)
+        self.tip_window = tw = ctk.CTkToplevel(self.widget)
         tw.wm_overrideredirect(True)
         try:
             tw.attributes("-topmost", True)
-            tw.attributes("-alpha", 0.95)
+            if sys.platform.startswith("win"):
+                tw.attributes("-transparentcolor", "#000001")
+                tw.configure(fg_color="#000001")
+            else:
+                tw.configure(fg_color="transparent")
         except Exception:
             pass
 
-        is_light = ctk.get_appearance_mode() == "Light"
-        tip_bg = "#FFFFFF" if is_light else "#13141B"
-        tip_fg = "#1F2937" if is_light else "#C2C7D0"
-        rec_bg = "#FFF7ED" if is_light else "#231A13"
-        rec_border = "#FFD1AD" if is_light else "#5C3414"
-        rec_fg = "#C25E00" if is_light else "#FFA439"
-        sep_bg = "#E5E7EB" if is_light else "#262936"
-
-        # Subtle matte frame with creator orange accent border
-        frame = tk.Frame(
+        card = ctk.CTkFrame(
             tw,
-            bg=tip_bg,
-            highlightthickness=1,
-            highlightbackground="#FF6D00",
-            padx=12,
-            pady=10
+            corner_radius=14,
+            border_width=1,
+            border_color=ORANGE_PRIMARY,
+            fg_color=BG_CARD
         )
-        frame.pack()
+        card.pack(padx=2, pady=2)
 
-        font_family = "Segoe UI" if tk.TkVersion >= 8.6 and sys.platform.startswith("win") else "Helvetica"
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(padx=16, pady=14)
 
-        # Main explanation text (soft typography)
-        lbl = tk.Label(
-            frame,
-            text=self.text,
-            justify="left",
-            font=(font_family, 11),
-            fg=tip_fg,
-            bg=tip_bg,
-            wraplength=self.max_width
-        )
-        lbl.pack(anchor="w")
+        hover_targets = [tw, card, inner]
 
-        hover_targets = [tw, frame, lbl]
+        lines = self.text.split("\n\n")
+        for line in lines:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if line_str.startswith("• "):
+                content = line_str[2:].strip()
+                if ":" in content:
+                    title, desc = content.split(":", 1)
+                    item_box = ctk.CTkFrame(inner, fg_color="transparent")
+                    item_box.pack(fill="x", pady=(0, 6))
+                    hover_targets.append(item_box)
 
-        # Recommendation section (if present): Distinct warm amber shade + bold typography
+                    lbl_t = ctk.CTkLabel(
+                        item_box,
+                        text=f"●  {title.strip()}:",
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        text_color=TEXT_TITLE,
+                        anchor="w"
+                    )
+                    lbl_t.pack(anchor="w")
+                    hover_targets.append(lbl_t)
+
+                    lbl_d = ctk.CTkLabel(
+                        item_box,
+                        text=desc.strip(),
+                        font=ctk.CTkFont(size=11),
+                        text_color=TEXT_BODY,
+                        wraplength=self.max_width,
+                        justify="left",
+                        anchor="w"
+                    )
+                    lbl_d.pack(anchor="w", padx=(14, 0))
+                    hover_targets.append(lbl_d)
+                else:
+                    lbl_item = ctk.CTkLabel(
+                        inner,
+                        text=line_str,
+                        font=ctk.CTkFont(size=11),
+                        text_color=TEXT_BODY,
+                        wraplength=self.max_width,
+                        justify="left",
+                        anchor="w"
+                    )
+                    lbl_item.pack(anchor="w", pady=(0, 6))
+                    hover_targets.append(lbl_item)
+            else:
+                lbl_para = ctk.CTkLabel(
+                    inner,
+                    text=line_str,
+                    font=ctk.CTkFont(size=11),
+                    text_color=TEXT_BODY,
+                    wraplength=self.max_width,
+                    justify="left",
+                    anchor="w"
+                )
+                lbl_para.pack(anchor="w", pady=(0, 6))
+                hover_targets.append(lbl_para)
+
         if self.recommendation:
-            # Elegant thin separator
-            sep = tk.Frame(frame, height=1, bg=sep_bg)
-            sep.pack(fill="x", pady=(10, 8))
-
-            # Recommendation container with subtle amber background
-            rec_box = tk.Frame(
-                frame,
-                bg=rec_bg,
-                highlightthickness=1,
-                highlightbackground=rec_border,
-                padx=10,
-                pady=7
+            rec_card = ctk.CTkFrame(
+                inner,
+                corner_radius=8,
+                fg_color=("#FFF7ED", "#26170E"),
+                border_width=1,
+                border_color=("#FED7AA", "#45220A")
             )
-            rec_box.pack(fill="x", anchor="w")
+            rec_card.pack(fill="x", pady=(6, 0))
+            hover_targets.append(rec_card)
 
             rec_text = self.recommendation
-            if not rec_text.startswith(""):
-                rec_text = f"Doporuceni: {rec_text}"
-
-            rec_lbl = tk.Label(
-                rec_box,
-                text=rec_text,
-                justify="left",
-                font=(font_family, 10, "bold"),
-                fg=rec_fg,
-                bg=rec_bg,
-                wraplength=self.max_width - 24
+            lbl_rec = ctk.CTkLabel(
+                rec_card,
+                text=f"💡  Doporučení: {rec_text}",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=ORANGE_PRIMARY,
+                wraplength=self.max_width - 24,
+                justify="left"
             )
-            rec_lbl.pack(anchor="w")
+            lbl_rec.pack(padx=12, pady=8, anchor="w")
+            hover_targets.append(lbl_rec)
 
-            hover_targets.extend([sep, rec_box, rec_lbl])
-
-        # Keep tooltip open if mouse moves over tooltip window or recommendation box
         def keep_open(e):
             self.cancel_schedule()
 
@@ -736,15 +772,11 @@ class ModernTooltip:
         root_y = self.widget.winfo_rooty()
         btn_w = self.widget.winfo_width()
 
-        # Position floating cleanly next to the ? button
         x = root_x + btn_w + 8
         y = root_y - 4
 
-        # If it would overflow screen width on the right, place on left side
         if x + w_tip > screen_w - 12:
             x = max(8, root_x - w_tip - 8)
-
-        # If it overflows screen height, clamp safely
         if y + h_tip > screen_h - 15:
             y = max(8, screen_h - h_tip - 15)
 
@@ -1729,8 +1761,9 @@ class AutoClipApp(BaseApp):
                 text=label_text,
                 compound="top",
                 font=ctk.CTkFont(size=12, weight="bold"),
-                height=96,
-                corner_radius=10,
+                width=165,
+                height=90,
+                corner_radius=12,
                 fg_color=BG_CARD_INNER,
                 text_color=TEXT_TITLE,
                 border_width=1,
@@ -1738,7 +1771,7 @@ class AutoClipApp(BaseApp):
                 hover_color=("#E5E7EB", "#222530"),
                 command=lambda m=mode_key: self._on_theme_select(m)
             )
-            btn.pack(side="left", fill="x", expand=True, padx=(0 if idx == 0 else 10, 0))
+            btn.pack(side="left", padx=(0 if idx == 0 else 12, 0))
             self.theme_buttons[mode_key] = btn
 
         current_mode = ctk.get_appearance_mode().lower()

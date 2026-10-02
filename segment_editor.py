@@ -24,6 +24,13 @@ from typing import Callable, List, Optional, Set, Tuple
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
+
+if sys.platform.startswith("win"):
+    try:
+        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+    except Exception:
+        pass
+
 from ffmpeg_utils import find_binary, get_base_dir
 
 
@@ -151,6 +158,75 @@ def _load_ctk_icon(name: str, size: Tuple[int, int] = (16, 16)) -> Optional[ctk.
     return None
 
 
+# ---------------------------------------------------------------------------
+# Modern Circular Check Indicator (Replaces harsh square checkboxes)
+# ---------------------------------------------------------------------------
+
+class ModernCheckCircle(tk.Canvas):
+    """
+    Sleek circular check toggle for moment selection:
+    - Active: smooth circle filled with signature ORANGE (#FF6D00) with crisp white checkmark '✓'
+    - Inactive: clean subtle border ring matching the row aesthetic with orange hover ring
+    """
+    def __init__(
+        self,
+        parent,
+        checked: bool = True,
+        command: Optional[Callable[[bool], None]] = None,
+        bg_color: str = "#141519",
+        sel_bg_color: str = "#24170E"
+    ):
+        super().__init__(parent, width=24, height=24, bg=bg_color, highlightthickness=0, cursor="hand2")
+        self.checked = checked
+        self.command = command
+        self.bg_color = bg_color
+        self.sel_bg_color = sel_bg_color
+        self.is_selected = False
+        self.draw()
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def draw(self, is_selected: Optional[bool] = None):
+        if is_selected is not None:
+            self.is_selected = is_selected
+        self.delete("all")
+        cur_bg = self.sel_bg_color if self.is_selected else self.bg_color
+        self.configure(bg=cur_bg)
+        if self.checked:
+            self.create_oval(3, 3, 21, 21, fill=ORANGE, outline=ORANGE)
+            self.create_text(12, 11, text="✓", fill="#FFFFFF", font=("Segoe UI", 9, "bold"))
+        else:
+            bd = "#4B5563" if ctk.get_appearance_mode().lower() == "dark" else "#94A3B8"
+            self.create_oval(3, 3, 21, 21, fill=cur_bg, outline=bd, width=1.5)
+
+    def _on_enter(self, event=None):
+        if not self.checked:
+            self.delete("all")
+            cur_bg = self.sel_bg_color if self.is_selected else self.bg_color
+            self.configure(bg=cur_bg)
+            self.create_oval(3, 3, 21, 21, fill=cur_bg, outline=ORANGE, width=1.5)
+
+    def _on_leave(self, event=None):
+        self.draw()
+
+    def set_checked(self, checked: bool):
+        self.checked = checked
+        self.draw()
+
+    def set_colors(self, bg_color: str, sel_bg_color: str):
+        self.bg_color = bg_color
+        self.sel_bg_color = sel_bg_color
+        self.draw()
+
+    def _on_click(self, event=None):
+        self.checked = not self.checked
+        self.draw()
+        if callable(self.command):
+            self.command(self.checked)
+        return "break"
+
+
 # ===========================================================================
 # Dialog
 # ===========================================================================
@@ -209,8 +285,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         # Canvas seznam - stav scrollu
         self._list_canvas: Optional[tk.Canvas] = None
         self._row_items: List[dict] = []  # canvas item IDs pro každý řádek
-        self._chk_vars: List[tk.BooleanVar] = []
-        self._chk_widgets: List[tk.Checkbutton] = []
+        self._chk_widgets: List[ModernCheckCircle] = []
         self._chk_windows: List[int] = []  # canvas window IDs pro checkboxy
 
         # Ikony pro ovládací prvky přehrávače
@@ -232,10 +307,14 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
+        # Klávesová zkratka F11 pro fullscreen / maximize a sledování stavu okna
+        self.bind("<F11>", lambda _: self._toggle_maximize())
+        self.bind("<Configure>", self._on_window_configure)
+
         self._center()
         self._set_app_icon()
         self._resolve_theme_colors()
-        self.after(50, self._apply_windows_titlebar_theme)
+        self.after(30, self._apply_windows_titlebar_theme)
         self._build()
         self._update_summary()
 
@@ -293,7 +372,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             pass
 
     def _apply_windows_titlebar_theme(self):
-        """Sets immersive dark mode or light mode for the Windows title bar via DwmSetWindowAttribute."""
+        """Sets immersive dark mode or light mode for the Windows title bar via DwmSetWindowAttribute and restores maximize box."""
         if not sys.platform.startswith("win"):
             return
         try:
@@ -303,6 +382,21 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
             if not hwnd:
                 hwnd = self.winfo_id()
+
+            # Tkinter transient(parent) strips WS_MAXIMIZEBOX by default.
+            # Restore WS_MAXIMIZEBOX and WS_MINIMIZEBOX so users can maximize,
+            # double-click titlebar, or snap the editor window on Windows.
+            GWL_STYLE = -16
+            WS_MAXIMIZEBOX = 0x00010000
+            WS_MINIMIZEBOX = 0x00020000
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            cur_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, cur_style | WS_MAXIMIZEBOX | WS_MINIMIZEBOX)
+            ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
+
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             mode = ctk.get_appearance_mode().lower()
             dark_flag = c_int(1 if mode == "dark" else 0)
@@ -327,6 +421,27 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             )
         except Exception:
             pass
+
+    def _toggle_maximize(self):
+        """Prepne maximalizaci okna editoru."""
+        try:
+            if self.state() == "zoomed":
+                self.state("normal")
+            else:
+                self.state("zoomed")
+        except Exception:
+            pass
+
+    def _on_window_configure(self, event):
+        """Reaguje na zmenu rozmeru / maximalizaci okna a aktualizuje tlacitko."""
+        if event.widget == self:
+            try:
+                is_zoomed = (self.state() == "zoomed")
+                if hasattr(self, "_btn_hdr_max") and self._btn_hdr_max:
+                    txt = ("⤡  Zmenšit" if self.lang == "cs" else "⤡  Restore") if is_zoomed else ("⤢  Zvětšit" if self.lang == "cs" else "⤢  Maximize")
+                    self._btn_hdr_max.configure(text=txt)
+            except Exception:
+                pass
 
     def _center(self):
         self.update_idletasks()
@@ -371,6 +486,25 @@ class SegmentReviewDialog(ctk.CTkToplevel):
              if self.lang == "cs"
              else "Review and select the best moments for the final video cut")
         ctk.CTkLabel(left, text=s, font=ctk.CTkFont(size=11), text_color=TXT_BODY_T).pack(anchor="w")
+
+        # Tlacitko pro maximalizaci / zmenseni okna
+        self._btn_hdr_max = ctk.CTkButton(
+            row,
+            text="⤢  Zvětšit" if self.lang == "cs" else "⤢  Maximize",
+            image=self._icon_expand,
+            compound="left",
+            command=self._toggle_maximize,
+            height=32,
+            width=96,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=BG_INNER_T,
+            hover_color=("#E5E7EB", "#252834"),
+            text_color=TXT_TITLE_T,
+            border_width=1,
+            border_color=BD_CARD_T,
+            corner_radius=8
+        )
+        self._btn_hdr_max.pack(side="right", padx=(10, 0))
 
         pill = ctk.CTkFrame(row, fg_color=BG_INNER_T, corner_radius=8,
                             border_width=1, border_color=BD_CARD_T)
@@ -449,7 +583,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._btn_pp.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
         self._btn_ext = ctk.CTkButton(
-            cb, text="", image=self._icon_expand, command=self._ext_player, height=38, width=44,
+            cb, text="", image=self._icon_expand, command=self._toggle_maximize, height=38, width=44,
             fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#252834"),
             border_width=1, border_color=BD_CARD_T, corner_radius=8)
         self._btn_ext.pack(side="right")
@@ -590,25 +724,15 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             ind = tk.Frame(inner, width=3, bg=self.c_bg_row)
             ind.pack(side="left", fill="y", padx=(2, 6))
 
-            # 2. Checkbox
-            var = tk.BooleanVar(value=self._inc[i])
-            self._chk_vars.append(var)
-
-            chk = tk.Checkbutton(
+            # 2. Moderní elegantní kruhový indikátor výběru
+            chk = ModernCheckCircle(
                 inner,
-                variable=var,
-                bg=self.c_bg_row,
-                activebackground=self.c_bg_row,
-                selectcolor=self.c_bg_row,
-                fg=ORANGE,
-                activeforeground=ORANGE,
-                command=lambda idx=i: self._on_chk(idx),
-                relief="flat",
-                bd=0,
-                highlightthickness=0,
-                cursor="hand2"
+                checked=self._inc[i],
+                command=lambda c, idx=i: self._on_chk(idx, c),
+                bg_color=self.c_bg_row,
+                sel_bg_color=self.c_bg_row_sel
             )
-            chk.pack(side="left", padx=(0, 4))
+            chk.pack(side="left", padx=(0, 6))
             self._chk_widgets.append(chk)
 
             # 3. Číslo momentu (#01, #02, ...)
@@ -708,7 +832,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                 "frame": row_f, "inner": inner, "ind": ind,
                 "lbl_num": lbl_num, "lbl_time": lbl_time, "lbl_dur": lbl_dur,
                 "lbl_peak": lbl_peak, "lbl_ai": lbl_ai,
-                "chk": chk, "var": var, "pbtn": pbtn
+                "chk": chk, "pbtn": pbtn
             })
 
     def _highlight_row(self, idx: int, selected: bool):
@@ -722,7 +846,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         row["ind"].configure(bg=ORANGE if selected else bg)
         row["lbl_num"].configure(bg=bg, fg=ORANGE if selected else self.c_txt_muted)
         row["lbl_time"].configure(bg=bg)
-        row["chk"].configure(bg=bg, activebackground=bg, selectcolor=bg)
+        row["chk"].draw(is_selected=selected)
         btn_bg = self.c_pbtn_sel_bg if selected else self.c_pbtn_bg
         row["pbtn"].configure(bg=btn_bg, fg=ORANGE)
 
@@ -1200,7 +1324,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         idx = self._sel
         if 0 <= idx < len(self._inc):
             self._inc[idx] = not self._inc[idx]
-            self._chk_vars[idx].set(self._inc[idx])
+            if idx < len(self._chk_widgets):
+                self._chk_widgets[idx].set_checked(self._inc[idx])
             self._update_inc_btn(self._inc[idx])
             self._update_summary()
 
@@ -1230,23 +1355,26 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                 border_width=1
             )
 
-    def _on_chk(self, idx: int):
-        self._inc[idx] = self._chk_vars[idx].get()
+    def _on_chk(self, idx: int, checked: Optional[bool] = None):
+        if checked is not None:
+            self._inc[idx] = checked
+        elif 0 <= idx < len(self._chk_widgets):
+            self._inc[idx] = self._chk_widgets[idx].checked
         if idx == self._sel:
             self._update_inc_btn(self._inc[idx])
         self._update_summary()
 
     def _sel_all(self):
         self._inc = [True] * len(self._inc)
-        for v in self._chk_vars:
-            v.set(True)
+        for w in self._chk_widgets:
+            w.set_checked(True)
         self._update_inc_btn(True)
         self._update_summary()
 
     def _desel_all(self):
         self._inc = [False] * len(self._inc)
-        for v in self._chk_vars:
-            v.set(False)
+        for w in self._chk_widgets:
+            w.set_checked(False)
         self._update_inc_btn(False)
         self._update_summary()
 
@@ -1254,7 +1382,8 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         for i, seg in enumerate(self.segs):
             val = (round(seg[0], 2), round(seg[1], 2)) in self._rec_set
             self._inc[i] = val
-            self._chk_vars[i].set(val)
+            if i < len(self._chk_widgets):
+                self._chk_widgets[i].set_checked(val)
         self._update_inc_btn(self._inc[self._sel] if self.segs else False)
         self._update_summary()
 
