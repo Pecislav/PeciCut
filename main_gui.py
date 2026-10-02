@@ -455,26 +455,26 @@ TRANSLATIONS = {
 }
 
 # -----------------------------------------------------------------------------
-# Creator Branding Theme Colors (Light / Dark Adaptive Tuples)
+# Logi Options+ Inspired Creator Theme Colors (Light / Dark Adaptive Tuples)
 # -----------------------------------------------------------------------------
-BG_WINDOW = ("#F0F2F5", "#0D0E12")          # Pozadí okna (světlá šedá / hluboká matná černá)
-BG_HEADER = ("#E2E5E9", "#131419")          # Hlavička a patička
-BG_CARD = ("#FFFFFF", "#17181F")            # Hlavní karty sekcí (čistá bílá / matná černá)
-BG_CARD_INNER = ("#F7F8FA", "#111216")      # Vnitřní rámečky
-BORDER_CARD = ("#D8DCE3", "#232530")        # Ohraničení karet
+BG_WINDOW = ("#F8F9FA", "#0F1013")          # Pozadí okna (čistá světlá šedá / hluboká matná Logi tmavá)
+BG_HEADER = ("#FFFFFF", "#141519")          # Hlavička a postranní panel
+BG_CARD = ("#FFFFFF", "#181920")            # Karty sekcí (čistá bílá / matná Logi grafitová)
+BG_CARD_INNER = ("#F3F4F6", "#13141A")      # Vnitřní vnořené zóny a panely
+BORDER_CARD = ("#E5E7EB", "#232530")        # Jemné 1px ohraničení karet
+BORDER_SUBTLE = ("#E2E8F0", "#2D303E")      # Ohraničení tlačítek a přepínačů
 
-ORANGE_PRIMARY = "#FF6D00"                  # Energická Twitch/YT oranžová
-ORANGE_HOVER = "#FF851A"                    # Světlejší hover oranžová
-ORANGE_ACTIVE = "#E65A00"                   # Kliknutí / aktivní stav
-ORANGE_SUBTLE = ("#FFE8D6", "#28170B")      # Podbarvení badge / tagů
-ORANGE_ACCENT_TEXT = ("#D95A00", "#FF8C26") # Oranžový text pro hodnoty a čísla
+ORANGE_PRIMARY = "#FF6D00"                  # Výrazná tvůrčí oranžová (Logi Options+ signature accent)
+ORANGE_HOVER = "#FF7E1A"                    # Zářivější hover oranžová
+ORANGE_ACTIVE = "#E65A00"                   # Aktivní kliknutí
+ORANGE_SUBTLE = ("#FFEDD5", "#26170E")      # Jemné podbarvení odznaků a pill tagů
+ORANGE_ACCENT_TEXT = ("#C2410C", "#FF8C26") # Oranžový text hodnot s vysokým kontrastem
 
-TEXT_TITLE = ("#111827", "#FFFFFF")         # Text nadpisů (téměř černý / bílý)
-TEXT_BODY = ("#4B5563", "#9FA6B3")          # Tlumený text popisků
-TEXT_MUTED = ("#596172", "#8A92A2")         # Pomocné texty a tipy (vylepšený kontrast pro Light i Dark)
-TEXT_REC = ("#C25E00", "#E08A3C")           # Teplá oranžovo-zlatá pro doporučení
-TRACK_COLOR = ("#E5E7EB", "#242630")        # Pozadí dráhy sliderů a progress baru
-BORDER_SUBTLE = ("#CBD5E1", "#363947")      # Ohraničení tlačítek a přepínačů
+TEXT_TITLE = ("#111827", "#F9FAFB")         # Čistý kontrastní nadpis
+TEXT_BODY = ("#4B5563", "#A1A1AA")          # Přehledný sekundární text (Logi neutrální šedá)
+TEXT_MUTED = ("#6B7280", "#71717A")         # Tlumené popisky a pomocné texty
+TEXT_REC = ("#C25E00", "#FF9933")           # Zlatavá oranžová pro doporučení
+TRACK_COLOR = ("#E5E7EB", "#242632")        # Moderní dráha posuvníků
 
 # -----------------------------------------------------------------------------
 # Slanted Theme Preview Swatches Generator (Sharp Angle Cuts)
@@ -1512,55 +1512,68 @@ class AutoClipApp(BaseApp):
         badge_tag.pack(side="left")
 
         # Divider
-        ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=14, pady=12)
+        # Divider
+        ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=16, pady=12)
 
         # Navigation Label
         self.lbl_sidebar_modules = ctk.CTkLabel(
             self.sidebar_frame,
             text=self.tr("nav_modules"),
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=TEXT_MUTED
         )
         self.lbl_sidebar_modules.pack(anchor="w", padx=18, pady=(4, 6))
 
-        # Nav 1: PeciCut Module
+        # Nav 1: PeciCut (Logi Options+ style with vertical accent indicator)
+        self.nav_row_pecicut = ctk.CTkFrame(self.sidebar_frame, height=40, corner_radius=8, fg_color=("#F0F2F5", "#1B1C24"))
+        self.nav_row_pecicut.pack(fill="x", padx=10, pady=2)
+        self.nav_row_pecicut.pack_propagate(False)
+
+        self.nav_ind_pecicut = ctk.CTkFrame(self.nav_row_pecicut, width=4, corner_radius=2, fg_color=ORANGE_PRIMARY)
+        self.nav_ind_pecicut.pack(side="left", fill="y", padx=(4, 8), pady=8)
+
         self.btn_nav_pecicut = ctk.CTkButton(
-            self.sidebar_frame,
+            self.nav_row_pecicut,
             text=self.tr("nav_pecicut"),
             anchor="w",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=40,
-            corner_radius=8,
-            fg_color=ORANGE_PRIMARY,
-            text_color="#FFFFFF",
-            hover_color=ORANGE_HOVER,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="transparent",
+            text_color=TEXT_TITLE,
+            hover=False,
             command=lambda: self._switch_view("pecicut")
         )
-        self.btn_nav_pecicut.pack(fill="x", padx=12, pady=4)
+        self.btn_nav_pecicut.pack(side="left", fill="both", expand=True)
 
         # System Section Label
         self.lbl_sidebar_system = ctk.CTkLabel(
             self.sidebar_frame,
             text=self.tr("nav_system"),
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=TEXT_MUTED
         )
-        self.lbl_sidebar_system.pack(anchor="w", padx=18, pady=(16, 6))
+        self.lbl_sidebar_system.pack(anchor="w", padx=18, pady=(14, 6))
 
-        # Nav 2: Settings Module
+        # Nav 2: Settings (Logi Options+ style)
+        self.nav_row_settings = ctk.CTkFrame(self.sidebar_frame, height=40, corner_radius=8, fg_color="transparent")
+        self.nav_row_settings.pack(fill="x", padx=10, pady=2)
+        self.nav_row_settings.pack_propagate(False)
+
+        self.nav_ind_settings = ctk.CTkFrame(self.nav_row_settings, width=4, corner_radius=2, fg_color="transparent")
+        self.nav_ind_settings.pack(side="left", fill="y", padx=(4, 8), pady=8)
+
         self.btn_nav_settings = ctk.CTkButton(
-            self.sidebar_frame,
+            self.nav_row_settings,
             text=self.tr("nav_settings"),
             anchor="w",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=40,
-            corner_radius=8,
+            font=ctk.CTkFont(size=13, weight="bold"),
             fg_color="transparent",
-            text_color=TEXT_TITLE,
-            hover_color=("#D1D5DB", "#20222B"),
+            text_color=TEXT_MUTED,
+            hover=False,
             command=lambda: self._switch_view("settings")
         )
-        self.btn_nav_settings.pack(fill="x", padx=12, pady=4)
+        self.btn_nav_settings.pack(side="left", fill="both", expand=True)
+
+        self._setup_nav_hover_events()
 
         # Spacer pushes footer to the bottom
         ctk.CTkFrame(self.sidebar_frame, fg_color="transparent").pack(fill="both", expand=True)
@@ -2286,37 +2299,57 @@ class AutoClipApp(BaseApp):
         ctk.CTkLabel(info2, text=self.tr("comp_dirs_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
         ctk.CTkLabel(info2, text=self.tr("comp_dirs_desc"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
 
+    def _setup_nav_hover_events(self):
+        """Binds responsive hover highlighting across navigation rows and child widgets in Logi Options+ style."""
+        def bind_row(row, ind, btn, vname):
+            def on_enter(_):
+                if getattr(self, "current_view", None) != vname:
+                    row.configure(fg_color=("#E5E7EB", "#181920"))
+                    btn.configure(text_color=TEXT_TITLE)
+            def on_leave(_):
+                if getattr(self, "current_view", None) != vname:
+                    row.configure(fg_color="transparent")
+                    btn.configure(text_color=TEXT_MUTED)
+            def on_click(_):
+                self._switch_view(vname)
+
+            for w in (row, ind, btn):
+                w.bind("<Enter>", on_enter)
+                w.bind("<Leave>", on_leave)
+                w.bind("<Button-1>", on_click)
+
+        bind_row(self.nav_row_pecicut, self.nav_ind_pecicut, self.btn_nav_pecicut, "pecicut")
+        bind_row(self.nav_row_settings, self.nav_ind_settings, self.btn_nav_settings, "settings")
+
     def _switch_view(self, view_name: str):
-        """Switches the active view in Pecislav Studio between PeciCut and Nastavení."""
+        """Switches the active view in Pecislav Studio between PeciCut and Nastavení in Logi Options+ style."""
         self.current_view = view_name
         if view_name == "pecicut":
             self.page_settings.pack_forget()
             self.page_pecicut.pack(fill="both", expand=True, padx=20, pady=12)
-            self.btn_nav_pecicut.configure(
-                fg_color=ORANGE_PRIMARY,
-                text_color="#FFFFFF",
-                hover_color=ORANGE_HOVER
-            )
-            self.btn_nav_settings.configure(
-                fg_color="transparent",
-                text_color=TEXT_TITLE,
-                hover_color=("#D1D5DB", "#20222B")
-            )
+            if hasattr(self, "nav_ind_pecicut"):
+                self.nav_ind_pecicut.configure(fg_color=ORANGE_PRIMARY)
+                self.nav_row_pecicut.configure(fg_color=("#F0F2F5", "#1B1C24"))
+                self.btn_nav_pecicut.configure(text_color=TEXT_TITLE)
+
+                self.nav_ind_settings.configure(fg_color="transparent")
+                self.nav_row_settings.configure(fg_color="transparent")
+                self.btn_nav_settings.configure(text_color=TEXT_MUTED)
+
             self.lbl_header_title.configure(text=self.tr("header_pecicut_title"))
             self.lbl_header_subtitle.configure(text=self.tr("header_pecicut_subtitle"))
         elif view_name == "settings":
             self.page_pecicut.pack_forget()
             self.page_settings.pack(fill="both", expand=True, padx=20, pady=12)
-            self.btn_nav_settings.configure(
-                fg_color=ORANGE_PRIMARY,
-                text_color="#FFFFFF",
-                hover_color=ORANGE_HOVER
-            )
-            self.btn_nav_pecicut.configure(
-                fg_color="transparent",
-                text_color=TEXT_TITLE,
-                hover_color=("#D1D5DB", "#20222B")
-            )
+            if hasattr(self, "nav_ind_settings"):
+                self.nav_ind_settings.configure(fg_color=ORANGE_PRIMARY)
+                self.nav_row_settings.configure(fg_color=("#F0F2F5", "#1B1C24"))
+                self.btn_nav_settings.configure(text_color=TEXT_TITLE)
+
+                self.nav_ind_pecicut.configure(fg_color="transparent")
+                self.nav_row_pecicut.configure(fg_color="transparent")
+                self.btn_nav_pecicut.configure(text_color=TEXT_MUTED)
+
             self.lbl_header_title.configure(text=self.tr("header_settings_title"))
             self.lbl_header_subtitle.configure(text=self.tr("header_settings_subtitle"))
             self._refresh_cache_display()
@@ -2334,20 +2367,28 @@ class AutoClipApp(BaseApp):
         self.after(50, self._apply_windows_titlebar_theme)
 
     def _highlight_selected_theme(self, active_mode: str):
+        label_map = {
+            "system": self.tr("theme_system"),
+            "light": self.tr("theme_light"),
+            "dark": self.tr("theme_dark")
+        }
         for mode_key, btn in getattr(self, "theme_buttons", {}).items():
+            base_label = label_map.get(mode_key, mode_key.capitalize())
             if mode_key == active_mode:
                 btn.configure(
+                    text=f"✓  {base_label}",
                     border_width=2,
                     border_color=ORANGE_PRIMARY,
-                    fg_color=("#F3F4F6", "#20222B"),
+                    fg_color=("#F3F4F6", "#1B1C24"),
                     text_color=ORANGE_PRIMARY
                 )
             else:
                 btn.configure(
+                    text=f"○  {base_label}",
                     border_width=1,
                     border_color=BORDER_CARD,
                     fg_color=BG_CARD_INNER,
-                    text_color=TEXT_BODY
+                    text_color=TEXT_MUTED
                 )
 
     def _on_theme_change(self, choice: str):
@@ -2779,12 +2820,12 @@ del "%~f0"
 
     def _build_file_section(self, parent):
         """1. File picker and metadata display."""
-        box = ctk.CTkFrame(parent, corner_radius=10, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
+        box = ctk.CTkFrame(parent, corner_radius=12, fg_color=BG_CARD, border_width=1, border_color=BORDER_CARD)
         box.pack(fill="x", pady=8)
 
         # Header row with title, ? button, and Project History button
         hdr = ctk.CTkFrame(box, fg_color="transparent")
-        hdr.pack(fill="x", padx=16, pady=(12, 4))
+        hdr.pack(fill="x", padx=16, pady=(14, 6))
 
         self.lbl_sec_file = ctk.CTkLabel(
             hdr,
@@ -2822,32 +2863,34 @@ del "%~f0"
         )
         self.btn_open_history.pack(side="right")
 
-        # Interactive Drag & Drop Box
+        # Interactive Drag & Drop Box (Logi Options+ style)
         self.drop_zone = ctk.CTkFrame(
             box,
             fg_color=BG_CARD_INNER,
-            corner_radius=8,
+            corner_radius=10,
             border_width=1,
             border_color=BORDER_CARD
         )
-        self.drop_zone.pack(fill="x", padx=16, pady=(4, 10))
+        self.drop_zone.pack(fill="x", padx=16, pady=(4, 12))
 
         drop_inner = ctk.CTkFrame(self.drop_zone, fg_color="transparent")
-        drop_inner.pack(fill="x", padx=14, pady=10)
+        drop_inner.pack(fill="x", padx=16, pady=12)
 
-        btn_txt = self.tr("btn_change_file") if self.current_video_path else self.tr("btn_select_file")
+        has_video = bool(self.current_video_path)
+        btn_txt = self.tr("btn_change_file") if has_video else self.tr("btn_select_file")
         self.btn_select_file = ctk.CTkButton(
             drop_inner,
             text=btn_txt,
             command=self._on_select_file,
             width=180,
-            height=36,
+            height=38,
             font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=("#F3F4F6", "#20222B"),
-            hover_color=("#E5E7EB", "#2B2E3B"),
-            border_width=1,
-            border_color=ORANGE_PRIMARY,
-            text_color=TEXT_TITLE
+            fg_color=BG_CARD if has_video else ORANGE_PRIMARY,
+            hover_color=("#E5E7EB", "#2B2E3B") if has_video else ORANGE_HOVER,
+            border_width=1 if has_video else 0,
+            border_color=BORDER_SUBTLE if has_video else ORANGE_PRIMARY,
+            text_color=TEXT_TITLE if has_video else "#FFFFFF",
+            corner_radius=8
         )
         self.btn_select_file.pack(side="left")
 
@@ -2962,11 +3005,28 @@ del "%~f0"
                     )
                 except Exception:
                     pass
+            if hasattr(self, "btn_select_file"):
+                self.btn_select_file.configure(
+                    text=self.tr("btn_change_file"),
+                    fg_color=BG_CARD,
+                    hover_color=("#E5E7EB", "#2B2E3B"),
+                    border_width=1,
+                    border_color=BORDER_SUBTLE,
+                    text_color=TEXT_TITLE
+                )
         else:
             if hasattr(self, "lbl_file_path"):
                 self.lbl_file_path.configure(text=self.tr("no_file_selected"), text_color=TEXT_BODY)
             if hasattr(self, "lbl_dnd_hint"):
                 self.lbl_dnd_hint.configure(text=self.tr("dnd_drop_hint"), text_color=TEXT_MUTED)
+            if hasattr(self, "btn_select_file"):
+                self.btn_select_file.configure(
+                    text=self.tr("btn_select_file"),
+                    fg_color=ORANGE_PRIMARY,
+                    hover_color=ORANGE_HOVER,
+                    border_width=0,
+                    text_color="#FFFFFF"
+                )
 
     def _on_file_drop(self, event):
         self._on_drop_leave()
