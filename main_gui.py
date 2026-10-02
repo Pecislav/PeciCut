@@ -1512,7 +1512,6 @@ class AutoClipApp(BaseApp):
         badge_tag.pack(side="left")
 
         # Divider
-        # Divider
         ctk.CTkFrame(self.sidebar_frame, height=1, fg_color=BORDER_CARD).pack(fill="x", padx=16, pady=12)
 
         # Navigation Label
@@ -2139,12 +2138,10 @@ class AutoClipApp(BaseApp):
         if hasattr(self, "lbl_theme_title"):
             self.lbl_theme_title.configure(text=self.tr("card_theme_title"))
             self.lbl_theme_sub.configure(text=self.tr("card_theme_sub"))
-            if "system" in self.theme_buttons:
-                self.theme_buttons["system"].configure(text=self.tr("theme_system"))
-            if "light" in self.theme_buttons:
-                self.theme_buttons["light"].configure(text=self.tr("theme_light"))
-            if "dark" in self.theme_buttons:
-                self.theme_buttons["dark"].configure(text=self.tr("theme_dark"))
+            current_t = self.config.get("theme", ctk.get_appearance_mode().lower())
+            if current_t not in ["light", "dark"]:
+                current_t = "system"
+            self._highlight_selected_theme(current_t)
 
         if hasattr(self, "lbl_lang_title"):
             self.lbl_lang_title.configure(text=self.tr("card_lang_title"))

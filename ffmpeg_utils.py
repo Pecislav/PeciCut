@@ -79,7 +79,7 @@ def find_binary(binary_name: str) -> Optional[Path]:
 
     for directory in search_dirs:
         candidate = directory / executable_name
-        if candidate.is_file() and os.access(candidate, os.X_OK):
+        if candidate.is_file() and (is_windows or os.access(candidate, os.X_OK)):
             return candidate.resolve()
 
     system_path = shutil.which(executable_name) or shutil.which(binary_name)
@@ -250,6 +250,12 @@ def download_ffmpeg_auto(
                         target_file = bin_dir / filename
                         with zf.open(member) as source, open(target_file, "wb") as target:
                             shutil.copyfileobj(source, target)
+                        try:
+                            local_bin = get_base_dir() / "bin"
+                            local_bin.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(target_file, local_bin / filename)
+                        except Exception:
+                            pass
 
             is_ok, msg = verify_binaries()
             if is_ok:
