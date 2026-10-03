@@ -260,6 +260,554 @@ class ModernCheckCircle(tk.Canvas):
 
 
 # ===========================================================================
+# Velký náhled (Large Theater Preview)
+# ===========================================================================
+
+LARGE_PREV_W = 960
+LARGE_PREV_H = 540
+LARGE_PLAY_FPS = 30
+LARGE_DISP_MS = 16
+
+
+class LargePreviewDialog(ctk.CTkToplevel):
+    """
+    Samostatné zvětšené okno náhledu segmentu ve vysokém rozlišení (960x540).
+    Poskytuje plnohodnotné ovládání přehrávání: Play/Pause, Replay, interaktivní Scrubber,
+    přepínání zahrnutí do výsledného videa a klávesové zkratky (Mezerník, Esc, Šipky).
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTkToplevel | ctk.CTk,
+        video_path: Path,
+        seg: Tuple,
+        seg_idx: int,
+        is_included: bool,
+        lang: str = "cs",
+        on_toggle_inc: Optional[Callable[[int, bool], None]] = None,
+    ):
+        super().__init__(parent)
+        self._parent = parent
+        self.video_path = video_path
+        self.seg = seg
+        self.seg_idx = seg_idx
+        self.is_included = is_included
+        self.lang = lang
+        self.on_toggle_inc = on_toggle_inc
+
+        self.s0 = float(seg[0])
+        self.s1 = float(seg[1])
+        self.dur = max(0.1, self.s1 - self.s0)
+
+        # Okno setup
+        title = (
+            f"SnapCut • Velký náhled #{seg_idx + 1:02d} ({fmt_t(self.s0)} → {fmt_t(self.s1)})"
+            if self.lang == "cs"
+            else f"SnapCut • Large Preview #{seg_idx + 1:02d} ({fmt_t(self.s0)} → {fmt_t(self.s1)})"
+        )
+        self.title(title)
+        self.geometry("1020x710")
+        self.minsize(980, 680)
+        self.configure(fg_color=BG_CARD_T)
+        self.transient(parent)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Klávesové zkratky
+        self.bind("<Escape>", lambda _: self._on_close())
+        self.bind("<space>", lambda _: self._toggle_play())
+        self.bind("<Left>", lambda _: self._seek_relative(-2.0))
+        self.bind("<Right>", lambda _: self._seek_relative(2.0))
+
+        # Ikony
+        self._icon_play = _load_ctk_icon("play", (15, 15))
+        self._icon_pause = _load_ctk_icon("pause", (15, 15))
+        self._icon_check = _load_ctk_icon("check", (15, 15))
+
+        # Stav přehrávače
+        self._playing = False
+        self._closing = False
+        self._stop_ev = threading.Event()
+        self._ended_ev = threading.Event()
+        self._vid_proc: Optional[subprocess.Popen] = None
+        self._aud_proc: Optional[subprocess.Popen] = None
+        self._frame_lock = threading.Lock()
+        self._next_frame: Optional[Tuple[Image.Image, float]] = None
+        self._cur_photo: Optional[ImageTk.PhotoImage] = None
+        self._canvas_img: Optional[int] = None
+        self._disp_id: Optional[str] = None
+        self._play_session_id: int = 0
+        self._cur_play_offset: float = 0.0
+
+        self._center()
+        self._apply_titlebar()
+        self._build_ui()
+
+        # Po otevření zobraz úvodní snímek a začni přehrávat
+        self.after(50, self._init_preview)
+
+    def _center(self):
+        try:
+            self.update_idletasks()
+            w, h = 1020, 710
+            px = self._parent.winfo_x()
+            py = self._parent.winfo_y()
+            pw = self._parent.winfo_width()
+            ph = self._parent.winfo_height()
+            self.geometry(f"{w}x{h}+{px + max(0, (pw - w) // 2)}+{py + max(0, (ph - h) // 2)}")
+        except Exception:
+            pass
+
+    def _apply_titlebar(self):
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            is_dark = (ctk.get_appearance_mode().lower() == "dark")
+            val = ctypes.c_int(1 if is_dark else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), ctypes.sizeof(val))
+        except Exception:
+            pass
+
+    def _build_ui(self):
+        # 1. Horní záhlaví
+        hdr = ctk.CTkFrame(self, fg_color="transparent")
+        hdr.pack(fill="x", padx=20, pady=(12, 8))
+
+        t_title = (
+            f"● Moment #{self.seg_idx + 1:02d} • Velký náhled"
+            if self.lang == "cs"
+            else f"● Moment #{self.seg_idx + 1:02d} • Large Preview"
+        )
+        t_sub = (
+            f"{fmt_t(self.s0)}  →  {fmt_t(self.s1)}   (Délka momentu: {fmt_t(self.dur)})"
+            if self.lang == "cs"
+            else f"{fmt_t(self.s0)}  →  {fmt_t(self.s1)}   (Duration: {fmt_t(self.dur)})"
+        )
+
+        left = ctk.CTkFrame(hdr, fg_color="transparent")
+        left.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            left, text=t_title, font=ctk.CTkFont(size=16, weight="bold"), text_color=TXT_TITLE_T
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            left, text=t_sub, font=ctk.CTkFont(size=12, weight="bold"), text_color=ORANGE
+        ).pack(anchor="w")
+
+        # Tlačítko zavřít
+        btn_close = ctk.CTkButton(
+            hdr,
+            text="✕  Zavřít (Esc)" if self.lang == "cs" else "✕  Close (Esc)",
+            command=self._on_close,
+            height=32,
+            width=110,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=BG_INNER_T,
+            hover_color=("#E5E7EB", "#252834"),
+            text_color=TXT_TITLE_T,
+            border_width=1,
+            border_color=BD_CARD_T,
+            corner_radius=8,
+        )
+        btn_close.pack(side="right")
+
+        # 2. Velké video plátno (960x540)
+        cframe = ctk.CTkFrame(
+            self,
+            fg_color=BG_PLAYER,
+            corner_radius=10,
+            border_width=1,
+            border_color=BD_CARD_T,
+        )
+        cframe.pack(padx=20, pady=(0, 10))
+
+        self._vcanvas = ctk.CTkCanvas(
+            cframe,
+            width=LARGE_PREV_W,
+            height=LARGE_PREV_H,
+            bg="#000000",
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self._vcanvas.pack(padx=2, pady=2)
+        self._vcanvas.bind("<Button-1>", lambda _: self._toggle_play())
+
+        # 3. Scrubber časová osa
+        sb = ctk.CTkFrame(self, fg_color="transparent")
+        sb.pack(fill="x", padx=24, pady=(0, 10))
+
+        self._lbl_ct = ctk.CTkLabel(
+            sb, text="00:00", font=ctk.CTkFont(size=12, weight="bold"), text_color=TXT_TITLE_T, width=50
+        )
+        self._lbl_ct.pack(side="left")
+
+        self._pbar = ctk.CTkProgressBar(
+            sb, height=8, progress_color=ORANGE, fg_color=BG_INNER_T, corner_radius=4
+        )
+        self._pbar.pack(side="left", fill="x", expand=True, padx=8)
+        self._pbar.set(0.0)
+        self._pbar.bind("<Button-1>", self._on_scrubber_click)
+
+        self._lbl_tt = ctk.CTkLabel(
+            sb, text=fmt_t(self.dur), font=ctk.CTkFont(size=12), text_color=TXT_MUTED_T, width=50
+        )
+        self._lbl_tt.pack(side="right")
+
+        # 4. Spodní lišta s ovládacími prvky
+        ctrl = ctk.CTkFrame(self, fg_color="transparent")
+        ctrl.pack(fill="x", padx=24, pady=(0, 12))
+
+        # Play / Pause
+        self._btn_pp = ctk.CTkButton(
+            ctrl,
+            text="Přehrát náhled (Mezerník)" if self.lang == "cs" else "Play Preview (Space)",
+            image=self._icon_play,
+            compound="left",
+            command=self._toggle_play,
+            height=38,
+            width=190,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=ORANGE,
+            hover_color=ORANGE_HV,
+            text_color="#FFFFFF",
+            corner_radius=8,
+        )
+        self._btn_pp.pack(side="left", padx=(0, 8))
+
+        # Replay
+        self._btn_replay = ctk.CTkButton(
+            ctrl,
+            text="↺  Znovu" if self.lang == "cs" else "↺  Replay",
+            command=self._restart_play,
+            height=38,
+            width=100,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=BG_INNER_T,
+            hover_color=("#E5E7EB", "#252834"),
+            text_color=TXT_TITLE_T,
+            border_width=1,
+            border_color=BD_CARD_T,
+            corner_radius=8,
+        )
+        self._btn_replay.pack(side="left", padx=(0, 8))
+
+        # Zahrnutí do výsledného videa
+        self._btn_inc = ctk.CTkButton(
+            ctrl,
+            text="✓  Zahrnuto do videa" if self.lang == "cs" else "✓  Included in Cut",
+            image=self._icon_check,
+            compound="left",
+            command=self._toggle_inc,
+            height=38,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            corner_radius=8,
+        )
+        self._btn_inc.pack(side="left", padx=(0, 8))
+        self._update_inc_btn()
+
+        # Nápověda kláves
+        hint_text = (
+            "Mezerník: Přehrát/Pauza  •  ← / → : Posun ±2s  •  Esc: Zavřít"
+            if self.lang == "cs"
+            else "Space: Play/Pause  •  ← / → : Seek ±2s  •  Esc: Close"
+        )
+        ctk.CTkLabel(
+            ctrl, text=hint_text, font=ctk.CTkFont(size=11), text_color=TXT_MUTED_T
+        ).pack(side="right")
+
+    def _update_inc_btn(self):
+        if self.is_included:
+            t = "✓  Zahrnuto do výsledného videa" if self.lang == "cs" else "✓  Included in Cut"
+            self._btn_inc.configure(
+                text=t,
+                fg_color=("#ECFDF5", "#062E1E"),
+                hover_color=("#D1FAE5", "#0F4733"),
+                text_color=("#059669", "#34D399"),
+                border_width=1,
+                border_color=("#10B981", "#059669"),
+            )
+        else:
+            t = "✕  Vynecháno z videa" if self.lang == "cs" else "✕  Excluded from Cut"
+            self._btn_inc.configure(
+                text=t,
+                fg_color=("#F3F4F6", "#1E2028"),
+                hover_color=("#E5E7EB", "#252834"),
+                text_color=("#9CA3AF", "#6B7280"),
+                border_width=1,
+                border_color=("#D1D5DB", "#374151"),
+            )
+
+    def _toggle_inc(self):
+        self.is_included = not self.is_included
+        self._update_inc_btn()
+        if self.on_toggle_inc:
+            try:
+                self.on_toggle_inc(self.seg_idx, self.is_included)
+            except Exception:
+                pass
+
+    def _init_preview(self):
+        if self._closing:
+            return
+        def bg_load():
+            img = _grab_frame(self.video_path, self.s0, w=LARGE_PREV_W, h=LARGE_PREV_H)
+            if img and not self._closing:
+                self.after(0, lambda: self._show_static_frame(img))
+                self.after(100, self._start_play)
+
+        threading.Thread(target=bg_load, daemon=True).start()
+
+    def _show_static_frame(self, img: Image.Image):
+        if self._closing:
+            return
+        try:
+            photo = ImageTk.PhotoImage(img)
+            self._cur_photo = photo
+            if self._canvas_img is None:
+                self._canvas_img = self._vcanvas.create_image(0, 0, image=photo, anchor="nw")
+            else:
+                self._vcanvas.itemconfig(self._canvas_img, image=photo)
+        except Exception:
+            pass
+
+    def _toggle_play(self):
+        if self._playing:
+            self._pause_play()
+        else:
+            self._start_play()
+
+    def _restart_play(self):
+        self._stop_play()
+        self._cur_play_offset = 0.0
+        self._start_play()
+
+    def _seek_relative(self, delta: float):
+        new_off = max(0.0, min(self.dur - 0.1, self._cur_play_offset + delta))
+        self._seek_to(new_off)
+
+    def _on_scrubber_click(self, event):
+        try:
+            bar_w = self._pbar.winfo_width()
+            if bar_w > 0:
+                frac = max(0.0, min(1.0, event.x / bar_w))
+                self._seek_to(frac * self.dur)
+        except Exception:
+            pass
+
+    def _seek_to(self, target_offset: float):
+        clamped = max(0.0, min(self.dur - 0.1, target_offset))
+        self._cur_play_offset = clamped
+        was_playing = self._playing
+        self._stop_play()
+        self._lbl_ct.configure(text=fmt_t(clamped))
+        self._pbar.set(clamped / self.dur)
+
+        if was_playing:
+            self._start_play()
+        else:
+            def bg_load():
+                img = _grab_frame(self.video_path, self.s0 + clamped, w=LARGE_PREV_W, h=LARGE_PREV_H)
+                if img and not self._closing:
+                    self.after(0, lambda: self._show_static_frame(img))
+            threading.Thread(target=bg_load, daemon=True).start()
+
+    def _kill_procs(self):
+        for attr in ("_aud_proc", "_vid_proc"):
+            proc = getattr(self, attr, None)
+            if proc:
+                try:
+                    if hasattr(proc, "stdout") and proc.stdout:
+                        try:
+                            proc.stdout.close()
+                        except Exception:
+                            pass
+                    if proc.poll() is None:
+                        proc.terminate()
+                        proc.wait(timeout=0.15)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+            setattr(self, attr, None)
+
+    def _stop_play(self):
+        was = self._playing
+        self._playing = False
+        self._stop_ev.set()
+
+        if self._disp_id:
+            try:
+                self.after_cancel(self._disp_id)
+            except Exception:
+                pass
+            self._disp_id = None
+
+        self._kill_procs()
+        with self._frame_lock:
+            self._next_frame = None
+
+        if was and not self._closing:
+            try:
+                t = "Přehrát náhled (Mezerník)" if self.lang == "cs" else "Play Preview (Space)"
+                self._btn_pp.configure(text=t, image=self._icon_play, fg_color=ORANGE)
+            except Exception:
+                pass
+
+    def _pause_play(self):
+        self._stop_play()
+
+    def _start_play(self):
+        if self._closing:
+            return
+        self._stop_play()
+        self._play_session_id += 1
+        curr_session = self._play_session_id
+
+        if self._cur_play_offset >= self.dur - 0.2:
+            self._cur_play_offset = 0.0
+
+        resume_start = self.s0 + self._cur_play_offset
+        resume_dur = max(0.2, self.dur - self._cur_play_offset)
+
+        ffplay = find_binary("ffplay")
+        ffmpeg = find_binary("ffmpeg")
+        if not ffplay or not ffmpeg:
+            return
+
+        self._playing = True
+        self._stop_ev.clear()
+        self._ended_ev.clear()
+        with self._frame_lock:
+            self._next_frame = None
+
+        t = "Pozastavit (Mezerník)" if self.lang == "cs" else "Pause (Space)"
+        self._btn_pp.configure(text=t, image=self._icon_pause, fg_color="#DC2626")
+
+        cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+        sinfo = None
+        if sys.platform.startswith("win"):
+            sinfo = subprocess.STARTUPINFO()
+            sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            sinfo.wShowWindow = 0
+
+        # Audio stream
+        self._aud_proc = subprocess.Popen(
+            [
+                str(ffplay), "-nodisp",
+                "-ss", f"{resume_start:.3f}", "-t", f"{resume_dur:.3f}",
+                "-autoexit", str(self.video_path),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=sinfo,
+            creationflags=cflags,
+        )
+
+        # Video stream
+        self._vid_proc = subprocess.Popen(
+            [
+                str(ffmpeg),
+                "-ss", f"{resume_start:.3f}", "-t", f"{resume_dur:.3f}",
+                "-i", str(self.video_path),
+                "-vf", f"scale={LARGE_PREV_W}:{LARGE_PREV_H},fps={LARGE_PLAY_FPS}",
+                "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            startupinfo=sinfo,
+            creationflags=cflags,
+        )
+
+        base_offset = self._cur_play_offset
+        threading.Thread(target=self._reader, args=(curr_session, base_offset), daemon=True).start()
+        self._disp_id = self.after(LARGE_DISP_MS, self._disp_tick)
+
+    def _reader(self, session_id: int, base_offset: float = 0.0):
+        fsize = LARGE_PREV_W * LARGE_PREV_H * 3
+        fi = 0
+        wall0 = time.monotonic()
+
+        try:
+            while not self._stop_ev.is_set() and session_id == self._play_session_id:
+                if not self._vid_proc or not self._vid_proc.stdout:
+                    break
+                raw = self._vid_proc.stdout.read(fsize)
+                if len(raw) < fsize:
+                    break
+
+                fi += 1
+                ft = base_offset + (fi / LARGE_PLAY_FPS)
+
+                try:
+                    img = Image.frombytes("RGB", (LARGE_PREV_W, LARGE_PREV_H), raw)
+                except Exception:
+                    continue
+
+                with self._frame_lock:
+                    self._next_frame = (img, ft)
+
+                target = wall0 + (fi / LARGE_PLAY_FPS)
+                wait = target - time.monotonic()
+                if wait > 0.003:
+                    time.sleep(wait)
+        except Exception:
+            pass
+        finally:
+            if session_id == self._play_session_id:
+                self._ended_ev.set()
+
+    def _disp_tick(self):
+        if not self._playing or self._closing:
+            return
+
+        if self._ended_ev.is_set():
+            self._stop_play()
+            self._cur_play_offset = 0.0
+            self._lbl_ct.configure(text="00:00")
+            self._pbar.set(0.0)
+            return
+
+        with self._frame_lock:
+            item = self._next_frame
+            self._next_frame = None
+
+        if item is not None:
+            img, ft = item
+            try:
+                photo = ImageTk.PhotoImage(img)
+                self._cur_photo = photo
+                self._cur_play_offset = ft
+
+                if self._canvas_img is None:
+                    self._canvas_img = self._vcanvas.create_image(0, 0, image=photo, anchor="nw")
+                else:
+                    self._vcanvas.itemconfig(self._canvas_img, image=photo)
+
+                self._lbl_ct.configure(text=fmt_t(ft))
+                if self.dur > 0:
+                    self._pbar.set(min(1.0, ft / self.dur))
+            except Exception:
+                pass
+
+        self._disp_id = self.after(LARGE_DISP_MS, self._disp_tick)
+
+    def _on_close(self):
+        self._closing = True
+        self._stop_play()
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+
+
+# ===========================================================================
 # Dialog
 # ===========================================================================
 
@@ -329,11 +877,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         self._icon_plus = _load_ctk_icon("plus", (15, 15))
 
         # Okno
-        title = ("Pecislav Studio • Editor"
-                 if self.lang == "cs" else "Pecislav Studio • Editor")
+        title = ("SnapCut • Editor"
+                 if self.lang == "cs" else "SnapCut • Editor")
         self.title(title)
-        self.geometry("1120x750")
-        self.minsize(900, 560)
+        self.geometry("1140x760")
+        self.minsize(1060, 680)
         self.configure(fg_color=BG_CARD_T)
         self.transient(parent)
         self.grab_set()
@@ -465,23 +1013,16 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             pass
 
     def _on_window_configure(self, event):
-        """Reaguje na zmenu rozmeru / maximalizaci okna a aktualizuje tlacitko."""
-        if event.widget == self:
-            try:
-                is_zoomed = (self.state() == "zoomed")
-                if hasattr(self, "_btn_hdr_max") and self._btn_hdr_max:
-                    txt = ("⤡  Zmenšit" if self.lang == "cs" else "⤡  Restore") if is_zoomed else ("⤢  Zvětšit" if self.lang == "cs" else "⤢  Maximize")
-                    self._btn_hdr_max.configure(text=txt)
-            except Exception:
-                pass
+        """Reaguje na zmenu rozmeru / stavu okna."""
+        pass
 
     def _center(self):
         self.update_idletasks()
         try:
-            w, h = 1120, 750
+            w, h = 1140, 760
             px, py = self._parent.winfo_x(), self._parent.winfo_y()
             pw, ph = self._parent.winfo_width(), self._parent.winfo_height()
-            self.geometry(f"{w}x{h}+{px + (pw-w)//2}+{py + (ph-h)//2}")
+            self.geometry(f"{w}x{h}+{px + max(0, (pw-w)//2)}+{py + max(0, (ph-h)//2)}")
         except Exception:
             pass
 
@@ -491,11 +1032,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
     def _build(self):
         self._build_header()
+        self._build_footer()
         split = ctk.CTkFrame(self, fg_color="transparent")
         split.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         self._build_player(split)
         self._build_list(split)
-        self._build_footer()
 
     # --- Hlavička ---
 
@@ -519,25 +1060,6 @@ class SegmentReviewDialog(ctk.CTkToplevel):
              else "Review and select the best moments for the final video cut")
         ctk.CTkLabel(left, text=s, font=ctk.CTkFont(size=11), text_color=TXT_BODY_T).pack(anchor="w")
 
-        # Tlacitko pro maximalizaci / zmenseni okna
-        self._btn_hdr_max = ctk.CTkButton(
-            row,
-            text="⤢  Zvětšit" if self.lang == "cs" else "⤢  Maximize",
-            image=self._icon_expand,
-            compound="left",
-            command=self._toggle_maximize,
-            height=32,
-            width=96,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=BG_INNER_T,
-            hover_color=("#E5E7EB", "#252834"),
-            text_color=TXT_TITLE_T,
-            border_width=1,
-            border_color=BD_CARD_T,
-            corner_radius=8
-        )
-        self._btn_hdr_max.pack(side="right", padx=(10, 0))
-
         pill = ctk.CTkFrame(row, fg_color=BG_INNER_T, corner_radius=8,
                             border_width=1, border_color=BD_CARD_T)
         pill.pack(side="right")
@@ -560,11 +1082,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         box.pack_propagate(False)
 
         p = ctk.CTkFrame(box, fg_color="transparent")
-        p.pack(fill="both", expand=True, padx=12, pady=12)
+        p.pack(fill="both", expand=True, padx=12, pady=10)
 
         # Titulek
         th = ctk.CTkFrame(p, fg_color="transparent")
-        th.pack(fill="x", pady=(0, 8))
+        th.pack(fill="x", pady=(0, 6))
 
         self._lbl_ptitle = ctk.CTkLabel(th, text="● Moment #01",
                                          font=ctk.CTkFont(size=14, weight="bold"),
@@ -579,16 +1101,17 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         # Video canvas
         sc = ctk.CTkFrame(p, fg_color=BG_PLAYER, corner_radius=8,
                           border_width=1, border_color=BD_CARD_T)
-        sc.pack(fill="x", pady=(0, 8))
+        sc.pack(fill="x", pady=(0, 6))
 
         self._vcanvas = ctk.CTkCanvas(sc, width=PREV_W, height=PREV_H,
                                        bg="#000000", highlightthickness=0, cursor="hand2")
         self._vcanvas.pack(padx=2, pady=2)
         self._vcanvas.bind("<Button-1>", lambda _: self._toggle_play())
+        self._vcanvas.bind("<Double-Button-1>", lambda _: self._open_large_preview())
 
         # Scrubber
         sb = ctk.CTkFrame(p, fg_color="transparent")
-        sb.pack(fill="x", pady=(0, 8))
+        sb.pack(fill="x", pady=(0, 6))
 
         self._lbl_ct = ctk.CTkLabel(sb, text="00:00", font=ctk.CTkFont(size=11, weight="bold"),
                                      text_color=TXT_TITLE_T, width=44)
@@ -603,19 +1126,22 @@ class SegmentReviewDialog(ctk.CTkToplevel):
                                      text_color=TXT_MUTED_T, width=44)
         self._lbl_tt.pack(side="right")
 
-        # Tlačítka přehrávače: velké Play/Pause vlevo + zvětšit vpravo
+        # Tlačítka přehrávače: velké Play/Pause vlevo + zvětšit náhled vpravo
         cb = ctk.CTkFrame(p, fg_color="transparent")
-        cb.pack(fill="x", pady=(0, 8))
+        cb.pack(fill="x", pady=(0, 6))
 
         self._btn_pp = ctk.CTkButton(
             cb, text="Přehrát náhled" if self.lang == "cs" else "Play Preview",
             image=self._icon_play, compound="left",
-            command=self._toggle_play, height=38, font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._toggle_play, height=36, font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=ORANGE, hover_color=ORANGE_HV, text_color="#FFF", corner_radius=8)
         self._btn_pp.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
         self._btn_ext = ctk.CTkButton(
-            cb, text="", image=self._icon_expand, command=self._toggle_maximize, height=38, width=44,
+            cb, text="⛶" if not self._icon_expand else "",
+            image=self._icon_expand,
+            command=self._open_large_preview,
+            height=36, width=44,
             fg_color=BG_INNER_T, hover_color=("#E5E7EB", "#252834"),
             border_width=1, border_color=BD_CARD_T, corner_radius=8)
         self._btn_ext.pack(side="right")
@@ -625,11 +1151,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             p, text="✓  Zahrnuto do výsledného videa" if self.lang == "cs" else "✓  Included in Cut",
             image=self._icon_check, compound="left",
             command=self._toggle_inc,
-            height=38, font=ctk.CTkFont(size=12, weight="bold"),
+            height=36, font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=("#ECFDF5", "#062E1E"), hover_color=("#D1FAE5", "#0F4733"),
             text_color=("#059669", "#34D399"), border_width=1,
             border_color=("#10B981", "#059669"), corner_radius=8)
-        self._btn_inc.pack(fill="x", pady=(0, 10))
+        self._btn_inc.pack(fill="x", pady=(0, 8))
 
         # Info box – elegantní strukturované metriky momentu
         ib = ctk.CTkFrame(p, fg_color=BG_INNER_T, corner_radius=8,
@@ -637,7 +1163,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
         ib.pack(fill="both", expand=True)
 
         ibi = ctk.CTkFrame(ib, fg_color="transparent")
-        ibi.pack(fill="both", expand=True, padx=12, pady=10)
+        ibi.pack(fill="both", expand=True, padx=10, pady=8)
 
         self._lbl_loud = ctk.CTkLabel(
             ibi, text="🔊  Hlasitost špičky: -",
@@ -645,7 +1171,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             text_color=TXT_TITLE_T,
             anchor="w"
         )
-        self._lbl_loud.pack(fill="x", pady=(0, 6))
+        self._lbl_loud.pack(fill="x", pady=(0, 4))
 
         self._lbl_face = ctk.CTkLabel(
             ibi, text="😊  Detekce obličeje: N/A",
@@ -653,7 +1179,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             text_color=TXT_BODY_T,
             anchor="w"
         )
-        self._lbl_face.pack(fill="x", pady=(0, 6))
+        self._lbl_face.pack(fill="x", pady=(0, 4))
 
         self._lbl_ai = ctk.CTkLabel(
             ibi, text="",
@@ -1325,28 +1851,38 @@ class SegmentReviewDialog(ctk.CTkToplevel):
             except Exception:
                 pass
 
-    def _ext_player(self):
-        if not self.segs:
+    def _open_large_preview(self):
+        """Otevře samostatné velké okno náhledu segmentu ve vysokém rozlišení (960x540)."""
+        if not self.segs or self._sel < 0 or self._sel >= len(self.segs):
             return
+        self._stop_play()
+
         seg = self.segs[self._sel]
-        s0, s1 = seg[0], seg[1]
-        ffplay = find_binary("ffplay")
-        if not ffplay:
-            return
-        try:
-            cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
-            sinfo = None
-            if sys.platform.startswith("win"):
-                sinfo = subprocess.STARTUPINFO()
-                sinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                sinfo.wShowWindow = 0
-            subprocess.Popen(
-                [str(ffplay), "-ss", f"{s0:.2f}", "-t", f"{s1-s0:.2f}",
-                 "-autoexit", "-x", "640", "-y", "360", str(self.video_path)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                startupinfo=sinfo, creationflags=cflags)
-        except Exception:
-            pass
+        idx = self._sel
+        is_inc = self._inc[idx] if idx < len(self._inc) else True
+
+        LargePreviewDialog(
+            parent=self,
+            video_path=self.video_path,
+            seg=seg,
+            seg_idx=idx,
+            is_included=is_inc,
+            lang=self.lang,
+            on_toggle_inc=self._on_large_preview_toggle_inc,
+        )
+
+    def _on_large_preview_toggle_inc(self, idx: int, state: bool):
+        """Synchronizuje stav zahrnutí momentu z velkého náhledu zpět do editoru."""
+        if 0 <= idx < len(self._inc):
+            self._inc[idx] = state
+            if idx < len(self._chk_widgets):
+                self._chk_widgets[idx].set_checked(state)
+            if idx == self._sel:
+                self._update_inc_btn(state)
+            self._update_summary()
+
+    def _ext_player(self):
+        self._open_large_preview()
 
     # ==================================================================
     # Zahrnutí / vyloučení

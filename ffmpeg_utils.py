@@ -171,14 +171,28 @@ def open_folder_in_file_manager(folder_path: Path | str) -> bool:
         system = platform.system().lower()
 
         if system == "windows":
+            win_target = str(target)
+            win_folder = str(folder)
+            if target.is_file():
+                try:
+                    subprocess.Popen(["explorer", f"/select,{win_target}"])
+                    return True
+                except Exception:
+                    pass
             try:
-                os.startfile(str(folder))
+                subprocess.Popen(["explorer", win_folder])
                 return True
             except Exception:
-                subprocess.Popen(["explorer", str(folder)])
-                return True
+                try:
+                    os.startfile(win_folder)
+                    return True
+                except Exception:
+                    return False
         elif system == "darwin":
-            subprocess.run(["open", str(folder)], check=False)
+            if target.is_file():
+                subprocess.run(["open", "-R", str(target)], check=False)
+            else:
+                subprocess.run(["open", str(folder)], check=False)
             return True
         else:
             subprocess.run(["xdg-open", str(folder)], check=False)

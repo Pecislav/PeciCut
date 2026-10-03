@@ -23,6 +23,10 @@ import platform
 import shutil
 import subprocess
 import sys
+if sys.platform.startswith("win"):
+    # Initialize COM in STA (Single-Threaded Apartment) mode before Win32 common dialogs load
+    setattr(sys, "coinit_flags", 2)
+
 import tempfile
 import threading
 import time
@@ -33,6 +37,101 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
+
+
+def safe_ask_directory(
+    parent: Optional[tk.Misc] = None,
+    title: str = "",
+    initialdir: Optional[str | Path] = None
+) -> str:
+    """Safely opens folder picker without COM or Tk modal locks."""
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+        except Exception:
+            pass
+
+    clean_dir = None
+    if initialdir:
+        try:
+            p = Path(initialdir).resolve()
+            if p.is_dir():
+                clean_dir = p.as_posix()
+            elif p.parent.is_dir():
+                clean_dir = p.parent.as_posix()
+        except Exception:
+            clean_dir = None
+
+    result = ""
+    try:
+        result = filedialog.askdirectory(parent=parent, title=title, initialdir=clean_dir)
+    except Exception:
+        try:
+            result = filedialog.askdirectory(parent=None, title=title, initialdir=clean_dir)
+        except Exception:
+            result = ""
+
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+            parent.focus_force()
+        except Exception:
+            pass
+
+    return result or ""
+
+
+def safe_ask_open_file(
+    parent: Optional[tk.Misc] = None,
+    title: str = "",
+    filetypes: Optional[List[Tuple[str, str]]] = None,
+    initialdir: Optional[str | Path] = None
+) -> str:
+    """Safely opens file picker without COM or Tk modal locks."""
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+        except Exception:
+            pass
+
+    clean_dir = None
+    if initialdir:
+        try:
+            p = Path(initialdir).resolve()
+            if p.is_dir():
+                clean_dir = p.as_posix()
+            elif p.parent.is_dir():
+                clean_dir = p.parent.as_posix()
+        except Exception:
+            clean_dir = None
+
+    result = ""
+    try:
+        result = filedialog.askopenfilename(
+            parent=parent,
+            title=title,
+            filetypes=filetypes or [("All files", "*.*")],
+            initialdir=clean_dir
+        )
+    except Exception:
+        try:
+            result = filedialog.askopenfilename(
+                parent=None,
+                title=title,
+                filetypes=filetypes or [("All files", "*.*")],
+                initialdir=clean_dir
+            )
+        except Exception:
+            result = ""
+
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+            parent.focus_force()
+        except Exception:
+            pass
+
+    return result or ""
 
 def init_custom_fonts() -> str:
     """
@@ -350,6 +449,7 @@ TRANSLATIONS = {
         # PeciCut Section 4: Export
         "sec_export_title": "4. Formát výstupu a cílová složka",
         "btn_change_out": "Změnit výstupní složku...",
+        "btn_reveal_out": "Otevřít složku",
         "out_dir_default": "Výstup: Automaticky ve složce se zdrojovým videem",
         "out_dir_custom": "Výstup: ",
         "chk_review_segments": "Před exportem otevřít editor momentů a náhledy",
@@ -471,6 +571,7 @@ TRANSLATIONS = {
         # PeciCut Section 4: Export
         "sec_export_title": "4. Output Format & Destination Directory",
         "btn_change_out": "Change output folder...",
+        "btn_reveal_out": "Open folder",
         "out_dir_default": "Output: Automatically in source video directory",
         "out_dir_custom": "Output: ",
         "chk_review_segments": "Open interactive editor & video preview before export",
@@ -2453,7 +2554,7 @@ class AutoClipApp(BaseApp):
     def _on_change_default_export(self):
         """Allows user to select a default export directory for all projects."""
         initial = self.default_export_dir if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else None
-        folder = filedialog.askdirectory(parent=self, title=self.tr("card_export_title"), initialdir=initial)
+        folder = safe_ask_directory(parent=self, title=self.tr("card_export_title"), initialdir=initial)
         if folder:
             self.default_export_dir = folder
             self.config["default_export_dir"] = folder
@@ -2632,6 +2733,8 @@ class AutoClipApp(BaseApp):
         if hasattr(self, "lbl_sec_export"):
             self.lbl_sec_export.configure(text=self.tr("sec_export_title"))
             self.btn_change_out.configure(text=self.tr("btn_change_out"))
+            if hasattr(self, "btn_reveal_out"):
+                self.btn_reveal_out.configure(text=self.tr("btn_reveal_out"))
             if not self.output_directory or (self.current_video_path and self.output_directory == self.current_video_path.parent):
                 self.lbl_output_dir.configure(text=self.tr("out_dir_default"))
             if hasattr(self, "chk_review_segments"):
@@ -4354,6 +4457,22 @@ del "%~f0"
         self.lbl_output_dir.pack(side="left", fill="x", expand=True)
         self.lbl_output_dir.bind("<Button-1>", lambda _: self._on_open_result_folder())
 
+        self.btn_reveal_out = ctk.CTkButton(
+            out_inner,
+            text=self.tr("btn_reveal_out"),
+            command=self._on_open_result_folder,
+            width=110,
+            height=30,
+            corner_radius=6,
+            fg_color=BG_CARD,
+            hover_color=("#E5E7EB", "#252834"),
+            border_width=1,
+            border_color=BORDER_CARD,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.btn_reveal_out.pack(side="right", padx=(6, 0))
+
         self.btn_change_out = ctk.CTkButton(
             out_inner,
             text=self.tr("btn_change_out"),
@@ -4700,10 +4819,17 @@ del "%~f0"
             ("Video soubory (*.mp4, *.mkv, *.mov, *.webm)", "*.mp4 *.mkv *.mov *.webm *.avi *.MP4 *.MKV *.MOV *.WEBM"),
             ("Všechny soubory", "*.*")
         ]
-        chosen = filedialog.askopenfilename(
+        initial = None
+        if self.current_video_path and self.current_video_path.parent.is_dir():
+            initial = self.current_video_path.parent
+        elif self.default_export_dir and Path(self.default_export_dir).is_dir():
+            initial = Path(self.default_export_dir)
+
+        chosen = safe_ask_open_file(
             parent=self,
             title="Vyberte video záznam",
-            filetypes=filetypes
+            filetypes=filetypes,
+            initialdir=initial
         )
         if chosen:
             self._load_video_file(chosen)
@@ -4795,13 +4921,13 @@ del "%~f0"
         """Allows user to select custom destination folder."""
         initial = None
         if self.output_directory and self.output_directory.is_dir():
-            initial = str(self.output_directory)
+            initial = self.output_directory
         elif self.current_video_path and self.current_video_path.parent.is_dir():
-            initial = str(self.current_video_path.parent)
+            initial = self.current_video_path.parent
         elif self.default_export_dir and Path(self.default_export_dir).is_dir():
-            initial = self.default_export_dir
+            initial = Path(self.default_export_dir)
 
-        folder = filedialog.askdirectory(parent=self, title=self.tr("sec_export_title"), initialdir=initial)
+        folder = safe_ask_directory(parent=self, title=self.tr("sec_export_title"), initialdir=initial)
         if folder:
             self.output_directory = Path(folder)
             self.lbl_output_dir.configure(
@@ -4823,8 +4949,11 @@ del "%~f0"
             target = self.output_directory
         elif not target and self.current_video_path:
             target = self.current_video_path.parent
-        elif not target and self.default_export_dir:
+        elif not target and self.default_export_dir and Path(self.default_export_dir).is_dir():
             target = Path(self.default_export_dir)
+        elif not target:
+            vids = Path.home() / "Videos"
+            target = vids if vids.is_dir() else Path.home()
 
         if target:
             open_folder_in_file_manager(target)
