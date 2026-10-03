@@ -156,22 +156,33 @@ def open_folder_in_file_manager(folder_path: Path | str) -> bool:
     """
     Cross-platform utility to open a directory in the default OS file explorer
     (Finder on macOS, Explorer on Windows, xdg-open on Linux).
+    Ensures the target directory exists before opening.
     """
-    target = Path(folder_path)
-    if not target.exists():
-        return False
-
-    folder = target if target.is_dir() else target.parent
-    system = platform.system().lower()
-
     try:
+        target = Path(folder_path).resolve()
+        if target.is_file():
+            folder = target.parent
+        elif not target.exists() and target.suffix:
+            folder = target.parent
+        else:
+            folder = target
+
+        folder.mkdir(parents=True, exist_ok=True)
+        system = platform.system().lower()
+
         if system == "windows":
-            os.startfile(str(folder))
+            try:
+                os.startfile(str(folder))
+                return True
+            except Exception:
+                subprocess.Popen(["explorer", str(folder)])
+                return True
         elif system == "darwin":
             subprocess.run(["open", str(folder)], check=False)
+            return True
         else:
             subprocess.run(["xdg-open", str(folder)], check=False)
-        return True
+            return True
     except Exception as e:
         print(f"Error opening folder: {e}", file=sys.stderr)
         return False
@@ -219,7 +230,7 @@ def download_ffmpeg_auto(
         try:
             req = urllib.request.Request(
                 zip_url,
-                headers={"User-Agent": "Mozilla/5.0 PeciCutDownloader/1.0"}
+                headers={"User-Agent": "Mozilla/5.0 SnapCutDownloader/1.0"}
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
                 total_size = int(resp.headers.get("content-length", 0))
@@ -282,7 +293,7 @@ def download_ffmpeg_auto(
 
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "Mozilla/5.0 PeciCutDownloader/1.0"}
+                    headers={"User-Agent": "Mozilla/5.0 SnapCutDownloader/1.0"}
                 )
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     zip_data = resp.read()

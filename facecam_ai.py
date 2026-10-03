@@ -74,7 +74,7 @@ def ensure_ai_models_present(progress_callback: Optional[Callable[..., None]] = 
         weight = 1.0 / total_needed
 
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PeciCut/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 SnapCut/1.0"})
             with urllib.request.urlopen(req, context=ctx, timeout=20) as resp:
                 content_len = resp.headers.get("Content-Length")
                 total_bytes = int(content_len) if content_len and content_len.isdigit() else min_size

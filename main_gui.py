@@ -2,7 +2,7 @@
 main_gui.py - Pecislav Studio: Creator Suite with modern CustomTkinter GUI.
 
 Modules:
-- PeciCut: Creator-focused video highlight cutter with Facecam AI and audio hype detection.
+- SnapCut: Creator-focused video highlight cutter with Facecam AI and audio hype detection.
 - Target duration limitation (e.g. 5, 10, 15, 20, 30 min or unlimited), prioritizing loudest hype moments.
 - Recommended initial values clearly stated under every single setting.
 - Interactive question mark (?) help buttons explaining each feature in plain language.
@@ -236,7 +236,7 @@ def get_app_cache_info() -> Tuple[int, List[Path]]:
         try:
             for p in tmp_dir.iterdir():
                 try:
-                    if p.name.startswith(("autoclip_", "peci_", "pecicut_", "pecislav_")):
+                    if p.name.startswith(("autoclip_", "peci_", "pecicut_", "snapcut_", "pecislav_")):
                         paths_to_clean.append(p)
                         if p.is_file():
                             total_bytes += p.stat().st_size
@@ -312,11 +312,14 @@ TRANSLATIONS = {
         "app_title": "Pecislav Studio • Pro Creator",
         "brand_title": "Pecislav Studio",
         "nav_modules": "MODULY",
-        "nav_pecicut": "  PeciCut",
+        "nav_snapcut": "  SnapCut",
+        "nav_pecicut": "  SnapCut",
         "nav_history": "  Historie projektů",
         "nav_system": "SYSTÉM",
         "nav_settings": "  Nastavení",
-        "header_pecicut_title": "PeciCut",
+        "header_snapcut_title": "SnapCut",
+        "header_snapcut_subtitle": "Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
+        "header_pecicut_title": "SnapCut",
         "header_pecicut_subtitle": "Automatický střih dlouhých záznamů (2-6h) z Twitch & YouTube dle mikrofonu",
         "header_settings_title": "Nastavení Studia",
         "header_settings_subtitle": "Barevný motiv, jazyk, export a aktualizace Pecislav Studio",
@@ -430,11 +433,14 @@ TRANSLATIONS = {
         "app_title": "Pecislav Studio • Pro Creator",
         "brand_title": "Pecislav Studio",
         "nav_modules": "MODULES",
-        "nav_pecicut": "  PeciCut",
+        "nav_snapcut": "  SnapCut",
+        "nav_pecicut": "  SnapCut",
         "nav_history": "  Project History",
         "nav_system": "SYSTEM",
         "nav_settings": "  Settings",
-        "header_pecicut_title": "PeciCut",
+        "header_snapcut_title": "SnapCut",
+        "header_snapcut_subtitle": "Automated highlight cutter for long Twitch & YouTube recordings (2-6h) based on mic audio",
+        "header_pecicut_title": "SnapCut",
         "header_pecicut_subtitle": "Automated highlight cutter for long Twitch & YouTube recordings (2-6h) based on mic audio",
         "header_settings_title": "Studio Settings",
         "header_settings_subtitle": "Color theme, language, export and updates for Pecislav Studio",
@@ -953,7 +959,7 @@ class ModernOptionMenu(ctk.CTkFrame):
         # Chevron pill on the right
         self._pill = ctk.CTkFrame(
             self._btn_frame,
-            width=28,
+            width=30,
             height=24,
             corner_radius=6,
             fg_color=button_color or ORANGE_PRIMARY,
@@ -964,12 +970,12 @@ class ModernOptionMenu(ctk.CTkFrame):
 
         self._chevron = ctk.CTkLabel(
             self._pill,
-            text="▾",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            text="▼",
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#FFFFFF",
             cursor="hand2"
         )
-        self._chevron.place(relx=0.5, rely=0.48, anchor="center")
+        self._chevron.place(relx=0.5, rely=0.5, anchor="center")
 
         interactive = [self, self._btn_frame, self._lbl, self._pill, self._chevron]
         for w in interactive:
@@ -1003,6 +1009,7 @@ class ModernOptionMenu(ctk.CTkFrame):
 
         self.update_idletasks()
         self.configure(border_color=ORANGE_PRIMARY)
+        self._chevron.configure(text="▲")
 
         self._popup = tw = ctk.CTkToplevel(self)
         tw.wm_overrideredirect(True)
@@ -1133,6 +1140,8 @@ class ModernOptionMenu(ctk.CTkFrame):
             ModernOptionMenu.active_menu = None
         self.configure(border_color=BORDER_CARD)
         self._pill.configure(fg_color=ORANGE_PRIMARY)
+        if hasattr(self, "_chevron") and self._chevron.winfo_exists():
+            self._chevron.configure(text="▼")
 
 # -----------------------------------------------------------------------------
 # Settings Dialog Compatibility Stub (Now integrated natively into Pecislav Studio)
@@ -1295,9 +1304,9 @@ class ProjectHistoryDialog(ctk.CTkToplevel):
         hdr.pack(fill="x", padx=24, pady=(20, 14))
 
         t_title = "Historie zpracovaných projektů" if self.current_lang == "cs" else "Processed Projects History"
-        t_sub = ("Videa, která prošla analýzou a střihem. Kliknutím na projekt se okamžitě vrátíte do editoru momentů."
+        t_sub = ("Videa, která prošla analýzou a střihem v modulu SnapCut. Kliknutím na projekt se okamžitě vrátíte do editoru momentů."
                  if self.current_lang == "cs"
-                 else "Videos processed by PeciCut. Click any project to open the moment editor immediately.")
+                 else "Videos processed by SnapCut. Click any project to open the moment editor immediately.")
 
         lbl_t = ctk.CTkLabel(hdr, text=t_title, font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_TITLE)
         lbl_t.pack(anchor="w")
@@ -1598,7 +1607,7 @@ class AutoClipApp(BaseApp):
         self.is_downloading_ffmpeg = False
         self.last_output_path: Optional[Path] = None
         self.settings_dialog = None
-        self.current_view = "pecicut"
+        self.current_view = "snapcut"
         self._dim_overlay: Optional[ctk.CTkFrame] = None
 
         # Build Studio Shell: Left Sidebar + Right Pages Container
@@ -1765,7 +1774,7 @@ class AutoClipApp(BaseApp):
                     return
 
                 # 2. Determine currently active scrollable page in main window
-                active_page = self.page_pecicut if self.current_view == "pecicut" else getattr(self, "page_settings", None)
+                active_page = self.page_snapcut if self.current_view in ("snapcut", "pecicut") else getattr(self, "page_settings", None)
                 if not active_page or not active_page.winfo_exists():
                     return
 
@@ -1836,8 +1845,8 @@ class AutoClipApp(BaseApp):
         self.pages_container = ctk.CTkFrame(self.right_wrapper, fg_color="transparent", corner_radius=0)
         self.pages_container.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # Build View 1: PeciCut (Highlight Cutter)
-        self._build_pecicut_view(self.pages_container)
+        # Build View 1: SnapCut (Highlight Cutter)
+        self._build_snapcut_view(self.pages_container)
 
         # Build View 2: Nastavení Studia
         self._build_settings_view(self.pages_container)
@@ -1845,8 +1854,8 @@ class AutoClipApp(BaseApp):
         # Build Bottom Status Footer
         self._build_footer(self.right_wrapper)
 
-        # Default active module: PeciCut
-        self._switch_view("pecicut")
+        # Default active module: SnapCut
+        self._switch_view("snapcut")
 
     def _build_sidebar(self, parent):
         """Constructs the left modern navigation bar for Pecislav Studio."""
@@ -1926,25 +1935,28 @@ class AutoClipApp(BaseApp):
         )
         self.lbl_sidebar_modules.pack(anchor="w", padx=18, pady=(4, 6))
 
-        # Nav 1: PeciCut (Logi Options+ style with vertical accent indicator)
-        self.nav_row_pecicut = ctk.CTkFrame(self.sidebar_frame, height=40, corner_radius=8, fg_color=("#F0F2F5", "#1B1C24"))
-        self.nav_row_pecicut.pack(fill="x", padx=10, pady=2)
-        self.nav_row_pecicut.pack_propagate(False)
+        # Nav 1: SnapCut (Logi Options+ style with vertical accent indicator)
+        self.nav_row_snapcut = ctk.CTkFrame(self.sidebar_frame, height=40, corner_radius=8, fg_color=("#F0F2F5", "#1B1C24"))
+        self.nav_row_snapcut.pack(fill="x", padx=10, pady=2)
+        self.nav_row_snapcut.pack_propagate(False)
+        self.nav_row_pecicut = self.nav_row_snapcut
 
-        self.nav_ind_pecicut = ctk.CTkFrame(self.nav_row_pecicut, width=4, corner_radius=2, fg_color=ORANGE_PRIMARY)
-        self.nav_ind_pecicut.pack(side="left", fill="y", padx=(4, 8), pady=8)
+        self.nav_ind_snapcut = ctk.CTkFrame(self.nav_row_snapcut, width=4, corner_radius=2, fg_color=ORANGE_PRIMARY)
+        self.nav_ind_snapcut.pack(side="left", fill="y", padx=(4, 8), pady=8)
+        self.nav_ind_pecicut = self.nav_ind_snapcut
 
-        self.btn_nav_pecicut = ctk.CTkButton(
-            self.nav_row_pecicut,
-            text=self.tr("nav_pecicut"),
+        self.btn_nav_snapcut = ctk.CTkButton(
+            self.nav_row_snapcut,
+            text=self.tr("nav_snapcut"),
             anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color="transparent",
             text_color=TEXT_TITLE,
             hover=False,
-            command=lambda: self._switch_view("pecicut")
+            command=lambda: self._switch_view("snapcut")
         )
-        self.btn_nav_pecicut.pack(side="left", fill="both", expand=True)
+        self.btn_nav_snapcut.pack(side="left", fill="both", expand=True)
+        self.btn_nav_pecicut = self.btn_nav_snapcut
 
         # System Section Label
         self.lbl_sidebar_system = ctk.CTkLabel(
@@ -2022,7 +2034,7 @@ class AutoClipApp(BaseApp):
 
         self.lbl_header_title = ctk.CTkLabel(
             title_row,
-            text=self.tr("header_pecicut_title"),
+            text=self.tr("header_snapcut_title"),
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=TEXT_TITLE
         )
@@ -2030,27 +2042,31 @@ class AutoClipApp(BaseApp):
 
         self.lbl_header_subtitle = ctk.CTkLabel(
             left_box,
-            text=self.tr("header_pecicut_subtitle"),
+            text=self.tr("header_snapcut_subtitle"),
             font=ctk.CTkFont(size=12),
             text_color=TEXT_BODY
         )
         self.lbl_header_subtitle.pack(anchor="w", pady=(3, 0))
 
-    def _build_pecicut_view(self, parent):
-        """Builds the PeciCut Highlight Cutter view inside the main pages container."""
-        self.page_pecicut = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
-        self.scroll_frame = self.page_pecicut  # Preserve self.scroll_frame for existing callbacks
+    def _build_snapcut_view(self, parent):
+        """Builds the SnapCut Highlight Cutter view inside the main pages container."""
+        self.page_snapcut = ctk.CTkScrollableFrame(parent, corner_radius=0, fg_color="transparent")
+        self.page_pecicut = self.page_snapcut
+        self.scroll_frame = self.page_snapcut  # Preserve self.scroll_frame for existing callbacks
 
         # 1. Výběr souboru
-        self._build_file_section(self.page_pecicut)
+        self._build_file_section(self.page_snapcut)
         # 2. Audio stopa
-        self._build_audio_track_section(self.page_pecicut)
+        self._build_audio_track_section(self.page_snapcut)
         # 3. Parametry detekce
-        self._build_parameters_section(self.page_pecicut)
+        self._build_parameters_section(self.page_snapcut)
         # 4. Export
-        self._build_export_section(self.page_pecicut)
+        self._build_export_section(self.page_snapcut)
         # 5. Průběh a výsledky
-        self._build_progress_section(self.page_pecicut)
+        self._build_progress_section(self.page_snapcut)
+
+    def _build_pecicut_view(self, parent):
+        self._build_snapcut_view(parent)
 
     def _build_settings_view(self, parent):
         """Builds the native Settings view for Pecislav Studio with all configuration cards."""
@@ -2436,7 +2452,8 @@ class AutoClipApp(BaseApp):
 
     def _on_change_default_export(self):
         """Allows user to select a default export directory for all projects."""
-        folder = filedialog.askdirectory(title=self.tr("card_export_title"))
+        initial = self.default_export_dir if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else None
+        folder = filedialog.askdirectory(parent=self, title=self.tr("card_export_title"), initialdir=initial)
         if folder:
             self.default_export_dir = folder
             self.config["default_export_dir"] = folder
@@ -2509,8 +2526,10 @@ class AutoClipApp(BaseApp):
         self.title(self.tr("app_title"))
         if hasattr(self, "lbl_sidebar_modules"):
             self.lbl_sidebar_modules.configure(text=self.tr("nav_modules"))
-        if hasattr(self, "btn_nav_pecicut"):
-            self.btn_nav_pecicut.configure(text=self.tr("nav_pecicut"))
+        if hasattr(self, "btn_nav_snapcut"):
+            self.btn_nav_snapcut.configure(text=self.tr("nav_snapcut"))
+        if hasattr(self, "btn_nav_pecicut") and self.btn_nav_pecicut != getattr(self, "btn_nav_snapcut", None):
+            self.btn_nav_pecicut.configure(text=self.tr("nav_snapcut"))
         if hasattr(self, "lbl_sidebar_system"):
             self.lbl_sidebar_system.configure(text=self.tr("nav_system"))
         if hasattr(self, "btn_nav_settings"):
@@ -2521,9 +2540,9 @@ class AutoClipApp(BaseApp):
             self.lbl_footer.configure(text=self.tr("footer_text"))
 
         # 2. Header
-        if self.current_view == "pecicut":
-            self.lbl_header_title.configure(text=self.tr("header_pecicut_title"))
-            self.lbl_header_subtitle.configure(text=self.tr("header_pecicut_subtitle"))
+        if self.current_view in ("snapcut", "pecicut"):
+            self.lbl_header_title.configure(text=self.tr("header_snapcut_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_snapcut_subtitle"))
         else:
             self.lbl_header_title.configure(text=self.tr("header_settings_title"))
             self.lbl_header_subtitle.configure(text=self.tr("header_settings_subtitle"))
@@ -2731,37 +2750,39 @@ class AutoClipApp(BaseApp):
                 w.bind("<Leave>", on_leave)
                 w.bind("<Button-1>", on_click)
 
-        bind_row(self.nav_row_pecicut, self.nav_ind_pecicut, self.btn_nav_pecicut, "pecicut")
+        bind_row(self.nav_row_snapcut, self.nav_ind_snapcut, self.btn_nav_snapcut, "snapcut")
         bind_row(self.nav_row_settings, self.nav_ind_settings, self.btn_nav_settings, "settings")
 
     def _switch_view(self, view_name: str):
-        """Switches the active view in Pecislav Studio between PeciCut and Nastavení in Logi Options+ style."""
-        self.current_view = view_name
+        """Switches the active view in Pecislav Studio between SnapCut and Nastavení in Logi Options+ style."""
         if view_name == "pecicut":
+            view_name = "snapcut"
+        self.current_view = view_name
+        if view_name == "snapcut":
             self.page_settings.pack_forget()
-            self.page_pecicut.pack(fill="both", expand=True, padx=20, pady=12)
-            if hasattr(self, "nav_ind_pecicut"):
-                self.nav_ind_pecicut.configure(fg_color=ORANGE_PRIMARY)
-                self.nav_row_pecicut.configure(fg_color=("#F0F2F5", "#1B1C24"))
-                self.btn_nav_pecicut.configure(text_color=TEXT_TITLE)
+            self.page_snapcut.pack(fill="both", expand=True, padx=20, pady=12)
+            if hasattr(self, "nav_ind_snapcut"):
+                self.nav_ind_snapcut.configure(fg_color=ORANGE_PRIMARY)
+                self.nav_row_snapcut.configure(fg_color=("#F0F2F5", "#1B1C24"))
+                self.btn_nav_snapcut.configure(text_color=TEXT_TITLE)
 
                 self.nav_ind_settings.configure(fg_color="transparent")
                 self.nav_row_settings.configure(fg_color="transparent")
                 self.btn_nav_settings.configure(text_color=TEXT_MUTED)
 
-            self.lbl_header_title.configure(text=self.tr("header_pecicut_title"))
-            self.lbl_header_subtitle.configure(text=self.tr("header_pecicut_subtitle"))
+            self.lbl_header_title.configure(text=self.tr("header_snapcut_title"))
+            self.lbl_header_subtitle.configure(text=self.tr("header_snapcut_subtitle"))
         elif view_name == "settings":
-            self.page_pecicut.pack_forget()
+            self.page_snapcut.pack_forget()
             self.page_settings.pack(fill="both", expand=True, padx=20, pady=12)
             if hasattr(self, "nav_ind_settings"):
                 self.nav_ind_settings.configure(fg_color=ORANGE_PRIMARY)
                 self.nav_row_settings.configure(fg_color=("#F0F2F5", "#1B1C24"))
                 self.btn_nav_settings.configure(text_color=TEXT_TITLE)
 
-                self.nav_ind_pecicut.configure(fg_color="transparent")
-                self.nav_row_pecicut.configure(fg_color="transparent")
-                self.btn_nav_pecicut.configure(text_color=TEXT_MUTED)
+                self.nav_ind_snapcut.configure(fg_color="transparent")
+                self.nav_row_snapcut.configure(fg_color="transparent")
+                self.btn_nav_snapcut.configure(text_color=TEXT_MUTED)
 
             self.lbl_header_title.configure(text=self.tr("header_settings_title"))
             self.lbl_header_subtitle.configure(text=self.tr("header_settings_subtitle"))
@@ -3074,7 +3095,7 @@ class AutoClipApp(BaseApp):
 
             new_version_found = None
             release_data = None
-            repos = ["Pecislav/PecislavStudio", "Pecislav/PeciCut"]
+            repos = ["Pecislav/PecislavStudio", "Pecislav/SnapCut", "Pecislav/PeciCut"]
             for repo in repos:
                 try:
                     # Query releases list (handles both final releases and prereleases/betas)
@@ -3344,7 +3365,7 @@ del "%~f0"
             hdr,
             text=(
                 "Vyberte video soubor z vašeho streamu nebo nahrávání (.mp4, .mkv nebo .mov).\n\n"
-                "PeciCut podporuje i velmi dlouhé soubory (2 až 6+ hodin). Video se načítá bezztrátově "
+                "SnapCut podporuje i velmi dlouhé soubory (2 až 6+ hodin). Video se načítá bezztrátově "
                 "a analyzuje přímo v paměti bez vytváření obřích souborů na disku."
             ),
             recommendation="Nahrajte MP4 nebo MKV soubor z OBS Studia o délce 2 až 6 hodin."
@@ -3773,25 +3794,25 @@ del "%~f0"
 
                 if export_edl:
                     self._update_progress(0.20, "Generování CMX 3600 EDL souboru...")
-                    edl_path = output_dir / f"{base_name}_PeciCut_{suffix_mode}.edl"
+                    edl_path = output_dir / f"{base_name}_SnapCut_{suffix_mode}.edl"
                     generate_cmx3600_edl(
                         segments=segments,
                         video_source_path=video_path,
                         output_edl_path=edl_path,
                         fps=fps,
-                        title=f"PECICUT_{suffix_mode.upper()}"
+                        title=f"SNAPCUT_{suffix_mode.upper()}"
                     )
                     generated_files.append(edl_path)
                     self.last_output_path = edl_path
 
                 if export_mp4:
-                    self._update_progress(0.40, "Příprava bezztrátového střihu videa (PeciCut FFmpeg concat)...")
+                    self._update_progress(0.40, "Příprava bezztrátového střihu videa (SnapCut FFmpeg concat)...")
                     def cut_cb(fraction: float, message: str):
                         p = 0.40 + (fraction * 0.58)
                         self._update_progress(p, message)
 
                     ext = video_path.suffix if video_path.suffix.lower() in [".mp4", ".mkv", ".mov"] else ".mp4"
-                    out_video_path = output_dir / f"{base_name}_PeciCut_{suffix_mode}_cut{ext}"
+                    out_video_path = output_dir / f"{base_name}_SnapCut_{suffix_mode}_cut{ext}"
                     cut_res = cut_video_lossless(
                         input_video_path=video_path,
                         segments=segments,
@@ -3878,16 +3899,7 @@ del "%~f0"
 
     def _open_folder(self, path: Path):
         """Otevře složku ve Finderu / Průzkumníku."""
-        try:
-            if platform.system() == "Darwin":
-                subprocess.Popen(["open", str(path)])
-            elif platform.system() == "Windows":
-                cflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
-                subprocess.Popen(["explorer", str(path)], creationflags=cflags)
-            else:
-                subprocess.Popen(["xdg-open", str(path)])
-        except Exception:
-            pass
+        open_folder_in_file_manager(path)
 
     def _clear_history(self):
         self.config["history"] = []
@@ -3914,7 +3926,7 @@ del "%~f0"
             text=(
                 "Klíčové nastavení pro záznamy z OBS Studia!\n\n"
                 "OBS typicky nahrává zvuk hry na Stopu 1 a váš mikrofon na Stopu 2 (nebo naopak).\n\n"
-                "Vyberte stopu obsahující POUZE váš mikrofon. PeciCut tak bude analyzovat váš hlas, smích a křik, "
+                "Vyberte stopu obsahující POUZE váš mikrofon. SnapCut tak bude analyzovat váš hlas, smích a křik, "
                 "aniž by byl maten hlasitou střelbou nebo hudbou ze hry."
             ),
             recommendation="Vyberte samostatnou stopu mikrofonu z OBS (často Stopa 2), nikoliv smíchaný zvuk."
@@ -4005,7 +4017,7 @@ del "%~f0"
             dur_hdr,
             text=(
                 "Chcete mít výsledné video o konkrétní délce (např. přesně 10 nebo 15 minut na YouTube)?\n\n"
-                "Pokud nastavíte limit délky, PeciCut automaticky seřadí všechny zachycené momenty podle intenzity (hlasitosti) "
+                "Pokud nastavíte limit délky, SnapCut automaticky seřadí všechny zachycené momenty podle intenzity (hlasitosti) "
                 "a vybere jen ty nejlepší hype reakce, které se vejdou do zadaného času!\n\n"
                 "Možnost 'Bez limitu' zachová úplně všechny detekované momenty."
             ),
@@ -4187,7 +4199,7 @@ del "%~f0"
             gap_frame,
             text=(
                 "Pokud se dvě hlasité reakce odehrají těsně za sebou (např. se zasmějete, na 1 sekundu se nadechnete "
-                "a znovu zařvete), PeciCut tyto momenty automaticky spojí do jednoho plynulého klipu.\n\n"
+                "a znovu zařvete), SnapCut tyto momenty automaticky spojí do jednoho plynulého klipu.\n\n"
                 "Díky tomu se video neseká po půlsekundách a střih působí profesionálně a přirozeně."
             ),
             recommendation="2.0 s zajistí plynulý sestřih bez trhání."
@@ -4320,9 +4332,11 @@ del "%~f0"
             out_inner,
             text="📁",
             font=ctk.CTkFont(size=16),
-            width=26
+            width=26,
+            cursor="hand2"
         )
         icon_lbl.pack(side="left", padx=(0, 8))
+        icon_lbl.bind("<Button-1>", lambda _: self._on_open_result_folder())
 
         init_out_text = (
             f"{self.tr('out_dir_custom')}{self.default_export_dir}"
@@ -4334,9 +4348,11 @@ del "%~f0"
             text=init_out_text,
             font=ctk.CTkFont(size=12),
             text_color=TEXT_TITLE if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else TEXT_BODY,
-            anchor="w"
+            anchor="w",
+            cursor="hand2"
         )
         self.lbl_output_dir.pack(side="left", fill="x", expand=True)
+        self.lbl_output_dir.bind("<Button-1>", lambda _: self._on_open_result_folder())
 
         self.btn_change_out = ctk.CTkButton(
             out_inner,
@@ -4685,6 +4701,7 @@ del "%~f0"
             ("Všechny soubory", "*.*")
         ]
         chosen = filedialog.askopenfilename(
+            parent=self,
             title="Vyberte video záznam",
             filetypes=filetypes
         )
@@ -4776,7 +4793,15 @@ del "%~f0"
 
     def _on_select_output_dir(self):
         """Allows user to select custom destination folder."""
-        folder = filedialog.askdirectory(title=self.tr("sec_export_title"))
+        initial = None
+        if self.output_directory and self.output_directory.is_dir():
+            initial = str(self.output_directory)
+        elif self.current_video_path and self.current_video_path.parent.is_dir():
+            initial = str(self.current_video_path.parent)
+        elif self.default_export_dir and Path(self.default_export_dir).is_dir():
+            initial = self.default_export_dir
+
+        folder = filedialog.askdirectory(parent=self, title=self.tr("sec_export_title"), initialdir=initial)
         if folder:
             self.output_directory = Path(folder)
             self.lbl_output_dir.configure(
@@ -4798,6 +4823,8 @@ del "%~f0"
             target = self.output_directory
         elif not target and self.current_video_path:
             target = self.current_video_path.parent
+        elif not target and self.default_export_dir:
+            target = Path(self.default_export_dir)
 
         if target:
             open_folder_in_file_manager(target)
@@ -5056,28 +5083,28 @@ del "%~f0"
             # 5. EDL Export
             if export_edl:
                 self._update_progress(0.70, "Generování CMX 3600 EDL souboru...")
-                edl_filename = f"{base_name}_PeciCut_{suffix_mode}.edl"
+                edl_filename = f"{base_name}_SnapCut_{suffix_mode}.edl"
                 edl_path = output_dir / edl_filename
                 generate_cmx3600_edl(
                     segments=merged_segments,
                     video_source_path=video_path,
                     output_edl_path=edl_path,
                     fps=fps,
-                    title=f"PECICUT_{suffix_mode.upper()}"
+                    title=f"SNAPCUT_{suffix_mode.upper()}"
                 )
                 generated_files.append(edl_path)
                 self.last_output_path = edl_path
 
             # 6. MP4 Lossless Video Cut
             if export_mp4:
-                self._update_progress(0.75, "Příprava bezztrátového střihu videa (PeciCut FFmpeg concat)...")
+                self._update_progress(0.75, "Příprava bezztrátového střihu videa (SnapCut FFmpeg concat)...")
 
                 def cut_cb(fraction: float, message: str):
                     p = 0.75 + (fraction * 0.23)
                     self._update_progress(p, message)
 
                 ext = video_path.suffix if video_path.suffix.lower() in [".mp4", ".mkv", ".mov"] else ".mp4"
-                out_video_name = f"{base_name}_PeciCut_{suffix_mode}_cut{ext}"
+                out_video_name = f"{base_name}_SnapCut_{suffix_mode}_cut{ext}"
                 out_video_path = output_dir / out_video_name
 
                 cut_res = cut_video_lossless(

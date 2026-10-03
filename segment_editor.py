@@ -226,7 +226,8 @@ class ModernCheckCircle(tk.Canvas):
         self.configure(bg=cur_bg)
         if self.checked:
             self.create_oval(3, 3, 21, 21, fill=ORANGE, outline=ORANGE)
-            self.create_text(12, 11, text="✓", fill="#FFFFFF", font=(APP_FONT, 9, "bold"))
+            self.create_line(7.5, 12.0, 10.5, 15.0, fill="#FFFFFF", width=2, capstyle="round", joinstyle="round")
+            self.create_line(10.5, 15.0, 16.5, 9.0, fill="#FFFFFF", width=2, capstyle="round", joinstyle="round")
         else:
             bd = "#4B5563" if ctk.get_appearance_mode().lower() == "dark" else "#94A3B8"
             self.create_oval(3, 3, 21, 21, fill=cur_bg, outline=bd, width=1.5)
@@ -753,7 +754,7 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
             # 1. Left accent bar indicator (oranžový pruh při aktivním výběru)
             ind = tk.Frame(inner, width=3, bg=self.c_bg_row)
-            ind.pack(side="left", fill="y", padx=(2, 6))
+            ind.pack(side="left", fill="y", padx=(2, 6), pady=6)
 
             # 2. Moderní elegantní kruhový indikátor výběru
             chk = ModernCheckCircle(

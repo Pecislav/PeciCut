@@ -1,93 +1,96 @@
 <div align="center">
 
 # Pecislav Studio 🎬
-### *The Ultimate Desktop Creator Suite by Pecislav*
+### *The Ultimate Desktop Creator Suite with SnapCut AI*
 
-[![Version](https://img.shields.io/badge/Verze-1.0.0--beta-FF6D00?style=for-the-badge&logo=rocket)](https://github.com/Pecislav/PecislavStudio)
-[![Platform](https://img.shields.io/badge/Platforma-Windows%20%7C%20macOS-22C55E?style=for-the-badge&logo=windows)](https://github.com/Pecislav/PecislavStudio)
-[![UI](https://img.shields.io/badge/Design-Logi%20Options%2B%20Style-FF6D00?style=for-the-badge)](https://github.com/Pecislav/PecislavStudio)
-[![Typography](https://img.shields.io/badge/Font-Poppins-0284C7?style=for-the-badge)](https://fonts.google.com/specimen/Poppins)
+[![Version](https://img.shields.io/badge/Version-1.0.0--beta-FF6D00?style=for-the-badge&logo=rocket)](https://github.com/Pecislav/PecislavStudio)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-22C55E?style=for-the-badge&logo=windows)](https://github.com/Pecislav/PecislavStudio)
+[![Design](https://img.shields.io/badge/Design-Logi%20Options%2B%20Style-FF6D00?style=for-the-badge)](https://github.com/Pecislav/PecislavStudio)
+[![Typography](https://img.shields.io/badge/Typography-Poppins-0284C7?style=for-the-badge)](https://fonts.google.com/specimen/Poppins)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 
 <p align="center">
-  <b>Komplexní All-in-One ekosystém pro streamery, YouTubery a tvůrce obsahu.</b><br>
-  Automatický střih dlouhých streamů (2–6 hodin), hybridní Facecam AI pro zachycení nejlepších reakcí a bleskový bezztrátový export bez ztráty kvality.
+  <b>Comprehensive All-in-One ecosystem engineered for streamers, YouTubers, and content creators.</b><br>
+  Automated highlight cutting for long Twitch and YouTube recordings (2–6 hours), hybrid Facecam AI reaction detection, and lightning-fast lossless FFmpeg stream-copy export without quality loss.
 </p>
 
 ---
 
 </div>
 
-## 🧭 O aplikaci Pecislav Studio
+## 🧭 About Pecislav Studio
 
-**Pecislav Studio** je moderní desktopový software navržený speciálně pro potřeby tvůrců na Twitchi a YouTube. Nabízí elegantní design inspirovaný **Logi Options+**, čistou typografii **Google Fonts Poppins**, zaoblené plovoucí prvky a signaturní oranžový akcent `#FF6D00`. Namísto desítek jednoúčelových skriptů přináší ucelené profesionální řešení s tmavým i světlým režimem.
+**Pecislav Studio** is a modern desktop suite built from the ground up to solve the most tedious task in content creation: turning multi-hour raw VODs into concise, high-energy videos.
 
----
-
-## 🧩 Hlavní funkce a moduly
-
-### 🎬 1. PeciCut — Highlight Cutter & Reaction Engine
-- **🤖 Facecam Computer Vision AI**: V reálném čase analyzuje webkameru pomocí neuronových sítí OpenCV YuNet ONNX. Detekuje otevřená ústa při výkřiku, údivu, široký úsměv při záchvatu smíchu a kinetický pohyb těla.
-- **⚡ Dvoufázová hybridní analýza**:
-  - *Fáze 1*: Blesková proudová analýza audio křivky z OBS mikrofonu (vytyčí kandidáty během několika sekund s minimální zátěží RAM).
-  - *Fáze 2*: Počítačové vidění prozkoumá pouze tyto momenty a vybere skutečné reakce tvůrce (odfiltruje náhodné zvuky ze hry).
-- **⏱️ Cílová stopáž videa**: Omezení délky sestřihu na **5, 10, 15, 20, 30 minut** nebo **bez limitu**. PeciCut seřadí zachycené momenty podle intenzity a vybere nejlepší hype reakce.
-- **✂️ Interaktivní Segment Review Editor**: Vizuální kontrola všech zachycených momentů před exportem s podporou celoobrazovkového náhledu, waveform křivky a okamžitého doladění klipů.
-- **🎞️ Bezztrátový FFmpeg Stream Copy**: Střih probíhá bezztrátově přes concat demuxer (`-c copy`) bez rekomprese — 4hodinový stream je sestříhán za 1 až 2 minuty v plné původní kvalitě.
-- **📋 CMX 3600 EDL Export**: Export timeline přímo do DaVinci Resolve a Adobe Premiere Pro pro finální postprodukci.
-
-### ⚙️ 2. Nastavení Studia & Diagnostika
-- **🎨 Přepínání motivů**: Podpora tmavého (Dark), světlého (Light) a systémového (System) režimu s živými náhledy a laděnými kontrastními barvami.
-- **🌐 Vícejazyčné rozhraní**: Kompletní lokalizace do češtiny (CS) i angličtiny (EN).
-- **💾 Spolehlivé ukládání nastavení**: Veškerá konfigurace (parametry střihu, posuvníky, složky, vzhled) se ukládá do trvalého `%APPDATA%/PecislavStudio/config.json`.
-- **⬇️ 1-Click stahování s procenty**: Automatické stažení FFmpeg a Facecam AI modelů přímo v rozhraní s živým ukazatelem stažených dat (MB / KB) a procentuálním průběhem (`XX %`).
-- **🧹 Správa mezipaměti**: Bezpečné promazání dočasných audio renderů jedním kliknutím bez ztráty nastavení.
-- **🚀 Automatické aktualizace**: Integrovaná kontrola nových verzí přímo z GitHub Releases.
+Featuring a sleek visual design inspired by **Logi Options+**, refined **Google Fonts Poppins** typography, floating rounded cards, and the signature `#FF6D00` warm accent, Pecislav Studio replaces dozens of fragile one-off command-line scripts with a cohesive, professional workstation that looks stunning in both **Dark** and **Light** modes.
 
 ---
 
-## 🛠️ Požadavky a instalace
+## 🧩 Key Features & Modules
 
-### Požadavky:
-- **Windows 10 / 11** nebo **macOS** (Apple Silicon i Intel)
-- **Python 3.10** nebo novější
-- FFmpeg (aplikace umí stáhnout automaticky přímo v nastavení)
+### 🎬 1. SnapCut — Highlight Cutter & Reaction Engine
+- **🤖 Facecam Computer Vision AI**: Real-time neural face analysis powered by OpenCV YuNet ONNX. Detects open mouth moments (screams, gasps, awe), broad smiles, laughter fits, and kinetic head/body movement.
+- **⚡ Two-Phase Hybrid Analysis Pipeline**:
+  - *Phase 1*: Lightning-fast streaming audio waveform analysis of the creator's microphone track (flags candidate excitement spikes in seconds with minimal RAM footprint).
+  - *Phase 2*: Visual AI scans candidate timestamps to verify genuine creator face reactions—filtering out deceptive in-game explosions or gunshots.
+- **⏱️ Target Duration Limiter**: Cap your final highlight video to **5, 10, 15, 20, 30 minutes** or **Unlimited**. SnapCut automatically ranks all captured moments by hype intensity and selects the best reactions that fit within your target duration.
+- **✂️ Interactive Segment Review Editor**: Visually review, scrub, trim, toggle, or full-screen preview every captured clip before finalizing the export.
+- **🎞️ Lossless FFmpeg Stream Copy**: Exports via FFmpeg concat demuxer (`-c copy`) without re-encoding—a 4-hour stream is sliced and stitched in **1 to 2 minutes** with 100% original visual and audio quality preserved.
+- **📋 CMX 3600 EDL Export**: Instant timeline export compatible with DaVinci Resolve and Adobe Premiere Pro for seamless multi-track finishing and music mastering.
 
-### Rychlé spuštění z repozitáře:
+---
+
+### ⚙️ 2. Studio Settings & System Diagnostics
+- **🎨 Theme Customization**: Native support for Dark, Light, and System themes with live preview and tuned contrast ratios.
+- **🌐 Multilingual Interface**: Full bilingual support in English and Czech.
+- **💾 Persistent Settings**: All threshold parameters, sliders, preferred export paths, and module configs persist automatically in `%APPDATA%/PecislavStudio/config.json`.
+- **⬇️ 1-Click Component Installer**: Automated in-app download and setup of FFmpeg, FFprobe, and Facecam AI ONNX models with real-time percentage indicators (`XX %`) and byte counters.
+- **🧹 Cache Manager**: Safely reclaim disk space by purging temporary audio renders with a single click.
+- **🚀 Integrated Update Checker**: Direct release verification from GitHub with automatic notifications.
+
+---
+
+## 🛠️ System Requirements & Quick Start
+
+### Requirements:
+- **Windows 10 / 11** or **macOS** (Apple Silicon & Intel)
+- **Python 3.10** or higher
+- **FFmpeg** (installed automatically via the Settings tab if missing)
+
+### Running from source:
 ```bash
-# 1. Klonování repozitáře
+# 1. Clone repository
 git clone https://github.com/Pecislav/PecislavStudio.git
 cd PecislavStudio
 
-# 2. Instalace závislostí
+# 2. Install dependencies
 python -m pip install -r requirements.txt
 
-# 3. Spuštění Pecislav Studio
+# 3. Launch Pecislav Studio
 python main_gui.py
 ```
 
 ---
 
-## 📦 Sestavení samostatné aplikace (.exe / .app)
+## 📦 Building Standalone Executable (.exe / .app)
 
-Aplikaci lze snadno zabalit do jednoho spustitelného balíčku:
+You can build a standalone binary distribution package without external Python dependencies:
 
 ### Windows (.exe):
-Spusťte přiložený skript:
+Run the automated build script:
 ```cmd
 build_exe.bat
 ```
-Nebo přes PyInstaller:
+Or run PyInstaller directly:
 ```cmd
 py -m PyInstaller --noconfirm PecislavStudio.spec
 ```
-
-Výsledná aplikace se vytvoří ve složce `dist/Pecislav Studio/`.
+The compiled executable will be placed in `dist/Pecislav Studio/`.
 
 ---
 
-## 👤 Autor
+## 👤 Author
 
-Vytvořil **Pecislav** pro tvůrčí komunitu.
+Created by **Pecislav** for creators worldwide.
 - GitHub: [@Pecislav](https://github.com/Pecislav)
-- Projekt: **Pecislav Studio (Pro Creator Edition)**
+- Project: **Pecislav Studio (Pro Creator Edition)**
