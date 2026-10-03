@@ -43,38 +43,78 @@ FACE_DOWNLOAD_URL = (
 )
 
 
-def ensure_ai_models_present(progress_callback: Optional[Callable[[str], None]] = None) -> bool:
+def ensure_ai_models_present(progress_callback: Optional[Callable[..., None]] = None) -> bool:
     """
     Checks if required AI models exist in the models directory.
-    If missing, downloads them automatically.
+    If missing, downloads them with chunked streaming and live percentage reporting.
     Returns True if models are ready, False on failure.
     """
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     models_to_check = [
-        (YUNET_MODEL_FILE, YUNET_DOWNLOAD_URL, 200000),  # ~232 KB
-        (SMILE_CASCADE_FILE, SMILE_DOWNLOAD_URL, 100000), # ~188 KB
-        (FACE_CASCADE_FILE, FACE_DOWNLOAD_URL, 500000),  # ~930 KB
+        (YUNET_MODEL_FILE, YUNET_DOWNLOAD_URL, 200000, "YuNet ONNX"),
+        (SMILE_CASCADE_FILE, SMILE_DOWNLOAD_URL, 100000, "Smile Cascade"),
+        (FACE_CASCADE_FILE, FACE_DOWNLOAD_URL, 500000, "Face Cascade"),
     ]
 
-    ctx = ssl._create_unverified_context()
-
-    for file_path, url, min_size in models_to_check:
-        if not file_path.exists() or file_path.stat().st_size < min_size:
-            name = file_path.name
-            if progress_callback:
-                progress_callback(f"Stahuji AI model {name}...")
+    needed = [m for m in models_to_check if not m[0].exists() or m[0].stat().st_size < m[2]]
+    if not needed:
+        if progress_callback:
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PeciCut/1.0"})
-                with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
-                    data = resp.read()
-                    with open(file_path, "wb") as f:
-                        f.write(data)
-            except Exception as e:
-                print(f"[FacecamAI] Warning: Failed to download {name}: {e}")
-                # If YuNet fails but Haar cascades exist, we can still fall back
-                if file_path == YUNET_MODEL_FILE and FACE_CASCADE_FILE.exists():
-                    continue
-                return False
+                progress_callback(1.0, "Všechny Facecam AI modely jsou připraveny.")
+            except TypeError:
+                progress_callback("Všechny Facecam AI modely jsou připraveny.")
+        return True
+
+    ctx = ssl._create_unverified_context()
+    total_needed = len(needed)
+
+    for idx, (file_path, url, min_size, label) in enumerate(needed):
+        name = file_path.name
+        base_pct = idx / total_needed
+        weight = 1.0 / total_needed
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PeciCut/1.0"})
+            with urllib.request.urlopen(req, context=ctx, timeout=20) as resp:
+                content_len = resp.headers.get("Content-Length")
+                total_bytes = int(content_len) if content_len and content_len.isdigit() else min_size
+                downloaded = 0
+                chunk_size = 16384
+                chunks = []
+
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+
+                    if total_bytes > 0:
+                        file_pct = min(1.0, downloaded / total_bytes)
+                        overall_frac = base_pct + (file_pct * weight)
+                        kb_down = downloaded / 1024
+                        kb_tot = total_bytes / 1024
+                        msg = f"Stahuji {label}: {kb_down:.0f} KB / {kb_tot:.0f} KB ({int(file_pct*100)} %)"
+                        if progress_callback:
+                            try:
+                                progress_callback(overall_frac, msg)
+                            except TypeError:
+                                progress_callback(msg)
+
+                with open(file_path, "wb") as f:
+                    for chk in chunks:
+                        f.write(chk)
+        except Exception as e:
+            print(f"[FacecamAI] Warning: Failed to download {name}: {e}")
+            if file_path == YUNET_MODEL_FILE and FACE_CASCADE_FILE.exists():
+                continue
+            return False
+
+    if progress_callback:
+        try:
+            progress_callback(1.0, "Facecam AI modely úspěšně staženy (100 %)!")
+        except TypeError:
+            progress_callback("Facecam AI modely úspěšně staženy!")
 
     return True
 

@@ -34,11 +34,56 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
-if sys.platform.startswith("win"):
+def init_custom_fonts() -> str:
+    """
+    Registers bundled fonts (Poppins) on Windows using AddFontResourceExW
+    and configures CustomTkinter's default font family.
+    Returns the chosen font family name.
+    """
+    chosen = "Segoe UI"
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            base_candidates = [
+                Path(__file__).resolve().parent,
+                Path(sys.executable).parent,
+            ]
+            if hasattr(sys, "_MEIPASS"):
+                base_candidates.insert(0, Path(getattr(sys, "_MEIPASS")))
+            for b in base_candidates:
+                fonts_dir = b / "assets" / "fonts"
+                if fonts_dir.is_dir():
+                    for font_path in fonts_dir.glob("*.ttf"):
+                        try:
+                            ctypes.windll.gdi32.AddFontResourceExW(str(font_path), 0x10, 0)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
     try:
-        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+        import tkinter.font as tkfont
+        temp_root = None
+        if not getattr(tk, "_default_root", None):
+            temp_root = tk.Tk()
+            temp_root.withdraw()
+        fams = set(tkfont.families())
+        for preferred in ["Poppins", "Montserrat", "Segoe UI Variable Text", "Segoe UI Variable Display", "Segoe UI"]:
+            if preferred in fams:
+                chosen = preferred
+                break
+        if temp_root:
+            temp_root.destroy()
+    except Exception:
+        chosen = "Poppins" if sys.platform.startswith("win") else "Segoe UI"
+
+    try:
+        ctk.ThemeManager.theme["CTkFont"]["family"] = chosen
     except Exception:
         pass
+    return chosen
+
+APP_FONT_FAMILY = init_custom_fonts()
 
 
 from ffmpeg_utils import (
@@ -67,34 +112,31 @@ from segment_editor import SegmentReviewDialog
 APP_VERSION = "1.0.0-beta"
 
 # -----------------------------------------------------------------------------
-# Configuration Management & Defaults
+# Configuration Management & Defaults (Bulletproof persistence)
 # -----------------------------------------------------------------------------
 def get_config_file_path() -> Path:
-    """Returns path to config.json, preferring local app folder if writable, falling back to AppData / home."""
-    base_dir = get_base_dir()
-    local_cfg = base_dir / "config.json"
-    if local_cfg.is_file():
-        try:
-            with open(local_cfg, "a"):
-                pass
-            return local_cfg
-        except Exception:
-            pass
-    else:
-        try:
-            test_file = base_dir / ".test_write_cfg"
-            test_file.touch()
-            test_file.unlink()
-            return local_cfg
-        except Exception:
-            pass
-
+    """
+    Returns path to persistent config.json in user AppData directory.
+    Guarantees settings are NEVER written into PyInstaller's temporary _MEIPASS folder.
+    """
     if platform.system().lower() == "windows":
-        app_data = os.getenv("APPDATA")
+        app_data = os.getenv("APPDATA") or os.getenv("LOCALAPPDATA")
         if app_data:
             cfg_dir = Path(app_data) / "PecislavStudio"
             cfg_dir.mkdir(parents=True, exist_ok=True)
-            return cfg_dir / "config.json"
+            appdata_cfg = cfg_dir / "config.json"
+
+            # One-time migration: If local config exists in source directory, seed APPDATA
+            base_dir = get_base_dir()
+            is_temp = hasattr(sys, "_MEIPASS") or "temp" in str(base_dir).lower() or "_mei" in str(base_dir).lower()
+            if not is_temp:
+                local_cfg = base_dir / "config.json"
+                if local_cfg.is_file() and not appdata_cfg.is_file():
+                    try:
+                        shutil.copy2(local_cfg, appdata_cfg)
+                    except Exception:
+                        pass
+            return appdata_cfg
 
     cfg_dir = Path.home() / ".pecislavstudio"
     cfg_dir.mkdir(parents=True, exist_ok=True)
@@ -103,10 +145,21 @@ def get_config_file_path() -> Path:
 
 CONFIG_FILE = get_config_file_path()
 DEFAULT_CONFIG = {
-    "language": "en",
-    "theme": "system",
+    "language": "cs",
+    "theme": "dark",
+    "font_family": "Poppins",
     "default_export_dir": "",
     "auto_open_folder": True,
+    "detection_mode": "highlights", # "highlights" or "silence"
+    "target_duration": "none",       # "none", "5min", "10min", "15min", "20min", "30min"
+    "crop_style": "original",       # "original", "shorts", "square"
+    "export_format": "mp4",         # "mp4" or "edl"
+    "facecam_enabled": True,
+    "review_segments": True,
+    "sound_threshold": -14.0,
+    "pad_before": 4.0,
+    "pad_after": 2.0,
+    "min_gap": 2.0,
     "history": []          # list of {"video": str, "output": str, "date": str, "stats": dict}
 }
 
@@ -123,12 +176,28 @@ def load_app_config() -> dict:
                     cfg.update(data)
                     return cfg
         except Exception as e:
-            print(f"[Config] Error reading config.json: {e}")
+            print(f"[Config] Error reading config.json from {cfg_file}: {e}")
+
+    # Fallback to local config.json if AppData is not yet created
+    base_dir = get_base_dir()
+    is_temp = hasattr(sys, "_MEIPASS") or "temp" in str(base_dir).lower() or "_mei" in str(base_dir).lower()
+    if not is_temp:
+        local_cfg = base_dir / "config.json"
+        if local_cfg.is_file():
+            try:
+                with open(local_cfg, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        cfg = DEFAULT_CONFIG.copy()
+                        cfg.update(data)
+                        return cfg
+            except Exception:
+                pass
     return DEFAULT_CONFIG.copy()
 
 
 def save_app_config(config: dict):
-    """Saves configuration dictionary to config.json."""
+    """Saves configuration dictionary to config.json in AppData and local folder if writable."""
     cfg_file = get_config_file_path()
     try:
         cfg_file.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +205,18 @@ def save_app_config(config: dict):
             json.dump(config, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[Config] Error saving config.json: {e}")
+
+    # Also sync to local directory if running from non-temp development folder
+    try:
+        base_dir = get_base_dir()
+        is_temp = hasattr(sys, "_MEIPASS") or "temp" in str(base_dir).lower() or "_mei" in str(base_dir).lower()
+        if not is_temp:
+            local_cfg = base_dir / "config.json"
+            if local_cfg != cfg_file:
+                with open(local_cfg, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 # -----------------------------------------------------------------------------
@@ -323,10 +404,12 @@ TRANSLATIONS = {
         "btn_recheck": " Zkontrolovat",
         "comp_ffmpeg_ok": "FFmpeg & FFprobe: Připraveno",
         "comp_ffmpeg_fail": "X FFmpeg & FFprobe: Chybí",
+        "comp_ffmpeg_downloading": "Stahuji balíček FFmpeg & FFprobe...",
         "comp_ffmpeg_desc_ok": "Nalezeno v systému: {name}",
         "comp_ffmpeg_desc_fail": "Potřebné pro analýzu audia a střih videa",
         "comp_models_ok": "Facecam AI modely: Připraveno (3/3)",
         "comp_models_fail": "X Facecam AI modely: Nalezeno {cnt}/3",
+        "comp_models_downloading": "Stahuji Facecam AI modely...",
         "comp_models_desc_ok": "YuNet ONNX & Haar Cascades v models/ pro detekci obličeje a reakcí",
         "comp_models_desc_fail": "Modely chybí pro analýzu webkamery",
         "comp_dirs_ok": "Pracovní adresáře aplikace: V pořádku",
@@ -439,10 +522,12 @@ TRANSLATIONS = {
         "btn_recheck": " Recheck",
         "comp_ffmpeg_ok": "FFmpeg & FFprobe: Ready",
         "comp_ffmpeg_fail": "X FFmpeg & FFprobe: Missing",
+        "comp_ffmpeg_downloading": "Downloading FFmpeg & FFprobe package...",
         "comp_ffmpeg_desc_ok": "Found on system: {name}",
         "comp_ffmpeg_desc_fail": "Required for audio analysis and video cutting",
         "comp_models_ok": "Facecam AI models: Ready (3/3)",
         "comp_models_fail": "X Facecam AI models: Found {cnt}/3",
+        "comp_models_downloading": "Downloading Facecam AI models...",
         "comp_models_desc_ok": "YuNet ONNX & Haar Cascades in models/ for face reaction detection",
         "comp_models_desc_fail": "Models missing for webcam reaction analysis",
         "comp_dirs_ok": "Application Working Directories: OK",
@@ -797,6 +882,257 @@ class ModernTooltip:
     def hide_all(cls):
         if cls.active_tooltip:
             cls.active_tooltip.hide()
+
+
+# -----------------------------------------------------------------------------
+# Modern Floating Rounded Option Menu (Replaces ancient Windows 95 tk.Menu)
+# -----------------------------------------------------------------------------
+
+class ModernOptionMenu(ctk.CTkFrame):
+    """
+    Sleek modern dropdown replacement for CTkOptionMenu.
+    Replaces ugly native Windows 95 tk.Menu with a floating rounded card,
+    smooth hover highlights, active item indicators, and Poppins typography.
+    """
+    active_menu: Optional['ModernOptionMenu'] = None
+
+    def __init__(
+        self,
+        parent,
+        values: Optional[List[str]] = None,
+        variable: Optional[ctk.StringVar] = None,
+        command: Optional[Callable[[str], None]] = None,
+        width: int = 400,
+        height: int = 36,
+        fg_color: Optional[Tuple[str, str]] = None,
+        text_color: Optional[Tuple[str, str]] = None,
+        button_color: Optional[str] = None,
+        button_hover_color: Optional[str] = None,
+        dynamic_resizing: bool = False,
+        **kwargs
+    ):
+        card_fg = fg_color or ("#F3F4F6", "#20222B")
+        txt_c = text_color or TEXT_TITLE
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            corner_radius=10,
+            fg_color=card_fg,
+            border_width=1,
+            border_color=BORDER_CARD,
+            cursor="hand2"
+        )
+        self.pack_propagate(False)
+        self.values = list(values) if values else []
+        self.command = command
+        self.variable = variable
+        self._state = "normal"
+        self._current_value = ""
+        if variable and variable.get():
+            self._current_value = variable.get()
+        elif self.values:
+            self._current_value = self.values[0]
+
+        self._popup: Optional[ctk.CTkToplevel] = None
+
+        # Content row inside button
+        self._btn_frame = ctk.CTkFrame(self, fg_color="transparent", cursor="hand2")
+        self._btn_frame.pack(fill="both", expand=True)
+
+        self._lbl = ctk.CTkLabel(
+            self._btn_frame,
+            text=self._current_value,
+            font=ctk.CTkFont(size=12),
+            text_color=txt_c,
+            anchor="w",
+            cursor="hand2"
+        )
+        self._lbl.pack(side="left", fill="x", expand=True, padx=(14, 6))
+
+        # Chevron pill on the right
+        self._pill = ctk.CTkFrame(
+            self._btn_frame,
+            width=28,
+            height=24,
+            corner_radius=6,
+            fg_color=button_color or ORANGE_PRIMARY,
+            cursor="hand2"
+        )
+        self._pill.pack(side="right", padx=(0, 6))
+        self._pill.pack_propagate(False)
+
+        self._chevron = ctk.CTkLabel(
+            self._pill,
+            text="▾",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#FFFFFF",
+            cursor="hand2"
+        )
+        self._chevron.place(relx=0.5, rely=0.48, anchor="center")
+
+        interactive = [self, self._btn_frame, self._lbl, self._pill, self._chevron]
+        for w in interactive:
+            w.bind("<Button-1>", self._on_toggle, add=True)
+            w.bind("<Enter>", self._on_hover_enter, add=True)
+            w.bind("<Leave>", self._on_hover_leave, add=True)
+
+    def _on_hover_enter(self, event=None):
+        if self._state == "disabled":
+            return
+        self.configure(border_color=ORANGE_PRIMARY)
+        self._pill.configure(fg_color=ORANGE_HOVER)
+
+    def _on_hover_leave(self, event=None):
+        if not self._popup:
+            self.configure(border_color=BORDER_CARD)
+            self._pill.configure(fg_color=ORANGE_PRIMARY)
+
+    def _on_toggle(self, event=None):
+        if self._state == "disabled":
+            return
+        if self._popup and self._popup.winfo_exists():
+            self._close_popup()
+        else:
+            self._open_popup()
+
+    def _open_popup(self):
+        if ModernOptionMenu.active_menu and ModernOptionMenu.active_menu != self:
+            ModernOptionMenu.active_menu._close_popup()
+        ModernOptionMenu.active_menu = self
+
+        self.update_idletasks()
+        self.configure(border_color=ORANGE_PRIMARY)
+
+        self._popup = tw = ctk.CTkToplevel(self)
+        tw.wm_overrideredirect(True)
+        try:
+            tw.attributes("-topmost", True)
+            if sys.platform.startswith("win"):
+                tw.attributes("-transparentcolor", "#000001")
+                tw.configure(fg_color="#000001")
+            else:
+                tw.configure(fg_color="transparent")
+        except Exception:
+            pass
+
+        card = ctk.CTkFrame(
+            tw,
+            corner_radius=12,
+            fg_color=BG_CARD,
+            border_width=1,
+            border_color=ORANGE_PRIMARY
+        )
+        card.pack(fill="both", expand=True, padx=2, pady=2)
+
+        use_scroll = len(self.values) > 6
+        if use_scroll:
+            container = ctk.CTkScrollableFrame(card, fg_color="transparent", height=240)
+            container.pack(fill="both", expand=True, padx=4, pady=4)
+        else:
+            container = ctk.CTkFrame(card, fg_color="transparent")
+            container.pack(fill="both", expand=True, padx=4, pady=4)
+
+        for val in self.values:
+            is_sel = (val == self._current_value)
+            t_disp = f"{'✓  ' if is_sel else '    '}{val}"
+            item_row = ctk.CTkButton(
+                container,
+                text=t_disp,
+                anchor="w",
+                height=34,
+                corner_radius=8,
+                fg_color=("#FFF7ED", "#26170E") if is_sel else "transparent",
+                text_color=ORANGE_PRIMARY if is_sel else TEXT_TITLE,
+                hover_color=("#F3F4F6", "#252834"),
+                font=ctk.CTkFont(size=12, weight="bold" if is_sel else "normal"),
+                command=lambda v=val: self._on_user_select(v)
+            )
+            item_row.pack(fill="x", padx=2, pady=2)
+
+        btn_w = self.winfo_width()
+        btn_h = self.winfo_height()
+        rx = self.winfo_rootx()
+        ry = self.winfo_rooty()
+
+        calc_h = min(len(self.values) * 38 + 16, 260 if use_scroll else 400)
+        pop_w = max(btn_w, 320)
+
+        screen_h = self.winfo_screenheight()
+        target_y = ry + btn_h + 4
+        if target_y + calc_h > screen_h - 20:
+            target_y = max(8, ry - calc_h - 4)
+
+        tw.geometry(f"{pop_w}x{calc_h}+{rx}+{target_y}")
+
+        root = self.winfo_toplevel()
+        def on_outside_click(event):
+            if self._popup and self._popup.winfo_exists():
+                try:
+                    px = self._popup.winfo_rootx()
+                    py = self._popup.winfo_rooty()
+                    pw = self._popup.winfo_width()
+                    ph = self._popup.winfo_height()
+                    if not (px <= event.x_root <= px + pw and py <= event.y_root <= py + ph):
+                        self._close_popup()
+                except Exception:
+                    self._close_popup()
+        root.bind("<Button-1>", on_outside_click, add=True)
+        tw.bind("<Escape>", lambda _: self._close_popup())
+
+    def _on_user_select(self, value: str):
+        self.set(value)
+        if callable(self.command):
+            try:
+                self.command(value)
+            except Exception as e:
+                print(f"[ModernOptionMenu] Error in command callback: {e}")
+
+    def set(self, value: str):
+        self._current_value = value
+        if hasattr(self, "_lbl") and self._lbl.winfo_exists():
+            self._lbl.configure(text=value)
+        if self.variable and self.variable.get() != value:
+            self.variable.set(value)
+        self._close_popup()
+
+    def get(self) -> str:
+        return self._current_value
+
+    def configure(self, require_redraw=False, **kwargs):
+        if "values" in kwargs:
+            self.values = list(kwargs.pop("values"))
+            if self._current_value not in self.values and self.values:
+                self.set(self.values[0])
+            elif not self.values:
+                self.set("")
+        if "state" in kwargs:
+            self._state = kwargs.pop("state")
+            cursor = "arrow" if self._state == "disabled" else "hand2"
+            color = TEXT_MUTED if self._state == "disabled" else TEXT_TITLE
+            self._lbl.configure(text_color=color, cursor=cursor)
+            self._btn_frame.configure(cursor=cursor)
+            super().configure(require_redraw=require_redraw, cursor=cursor)
+        super().configure(require_redraw=require_redraw, **kwargs)
+
+    def cget(self, attribute_name: str):
+        if attribute_name == "values":
+            return self.values
+        if attribute_name == "state":
+            return self._state
+        return super().cget(attribute_name)
+
+    def _close_popup(self):
+        if self._popup and self._popup.winfo_exists():
+            try:
+                self._popup.destroy()
+            except Exception:
+                pass
+        self._popup = None
+        if ModernOptionMenu.active_menu == self:
+            ModernOptionMenu.active_menu = None
+        self.configure(border_color=BORDER_CARD)
+        self._pill.configure(fg_color=ORANGE_PRIMARY)
 
 # -----------------------------------------------------------------------------
 # Settings Dialog Compatibility Stub (Now integrated natively into Pecislav Studio)
@@ -1268,6 +1604,9 @@ class AutoClipApp(BaseApp):
         # Build Studio Shell: Left Sidebar + Right Pages Container
         self._build_app_shell()
         self._setup_smooth_scrolling()
+
+        # Handle clean exit & bulletproof settings persistence
+        self.protocol("WM_DELETE_WINDOW", self._on_app_exit)
 
         # Check FFmpeg availability at launch
         self._check_ffmpeg_status()
@@ -1815,22 +2154,12 @@ class AutoClipApp(BaseApp):
         )
         self.lbl_lang_select.pack(side="left")
 
-        self.lang_menu = ctk.CTkOptionMenu(
+        self.lang_menu = ModernOptionMenu(
             l_inner,
             values=["English", "Čeština"],
             command=self._on_language_select,
-            width=200,
-            height=34,
-            corner_radius=6,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            dropdown_font=ctk.CTkFont(size=13),
-            fg_color=ORANGE_PRIMARY,
-            button_color=ORANGE_HOVER,
-            button_hover_color="#CC5200",
-            dropdown_fg_color=("#F3F4F6", "#1E2028"),
-            dropdown_hover_color=ORANGE_PRIMARY,
-            dropdown_text_color=TEXT_TITLE,
-            text_color="#FFFFFF"
+            width=180,
+            height=34
         )
         self.lang_menu.pack(side="right")
         self.lang_menu.set("English" if self.current_language == "en" else "Čeština")
@@ -2317,6 +2646,17 @@ class AutoClipApp(BaseApp):
         if ffmpeg_ok:
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_desc_ok", name=ffmpeg_path.name if ffmpeg_path else ''), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+        elif getattr(self, "_is_downloading_comp_ffmpeg", False):
+            ctk.CTkLabel(info0, text=f"⏳  {self.tr('comp_ffmpeg_downloading')}", font=ctk.CTkFont(size=12, weight="bold"), text_color=ORANGE_PRIMARY).pack(anchor="w")
+            self._comp_ffmpeg_sub_lbl = ctk.CTkLabel(info0, text=getattr(self, "_comp_ffmpeg_last_msg", "Připojuji k serveru..."), font=ctk.CTkFont(size=11), text_color=TEXT_BODY)
+            self._comp_ffmpeg_sub_lbl.pack(anchor="w")
+            act_box0 = ctk.CTkFrame(row0, fg_color="transparent")
+            act_box0.pack(side="right", padx=12)
+            self._comp_ffmpeg_pbar = ctk.CTkProgressBar(act_box0, width=130, height=8, fg_color=TRACK_COLOR, progress_color=ORANGE_PRIMARY)
+            self._comp_ffmpeg_pbar.pack(side="left", padx=(0, 8))
+            self._comp_ffmpeg_pbar.set(getattr(self, "_comp_ffmpeg_frac", 0.05))
+            self._comp_ffmpeg_pct_lbl = ctk.CTkLabel(act_box0, text=f"{int(getattr(self, '_comp_ffmpeg_frac', 0.05) * 100)} %", font=ctk.CTkFont(size=12, weight="bold"), text_color=ORANGE_PRIMARY, width=42)
+            self._comp_ffmpeg_pct_lbl.pack(side="right")
         else:
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_fail"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
             ctk.CTkLabel(info0, text=self.tr("comp_ffmpeg_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
@@ -2342,6 +2682,17 @@ class AutoClipApp(BaseApp):
         if models_ok:
             ctk.CTkLabel(info1, text=self.tr("comp_models_ok"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#22C55E").pack(anchor="w")
             ctk.CTkLabel(info1, text=self.tr("comp_models_desc_ok"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
+        elif getattr(self, "_is_downloading_comp_models", False):
+            ctk.CTkLabel(info1, text=f"⏳  {self.tr('comp_models_downloading')}", font=ctk.CTkFont(size=12, weight="bold"), text_color=ORANGE_PRIMARY).pack(anchor="w")
+            self._comp_models_sub_lbl = ctk.CTkLabel(info1, text=getattr(self, "_comp_models_last_msg", "Připojuji k serveru..."), font=ctk.CTkFont(size=11), text_color=TEXT_BODY)
+            self._comp_models_sub_lbl.pack(anchor="w")
+            act_box1 = ctk.CTkFrame(row1, fg_color="transparent")
+            act_box1.pack(side="right", padx=12)
+            self._comp_models_pbar = ctk.CTkProgressBar(act_box1, width=130, height=8, fg_color=TRACK_COLOR, progress_color=ORANGE_PRIMARY)
+            self._comp_models_pbar.pack(side="left", padx=(0, 8))
+            self._comp_models_pbar.set(getattr(self, "_comp_models_frac", 0.0))
+            self._comp_models_pct_lbl = ctk.CTkLabel(act_box1, text=f"{int(getattr(self, '_comp_models_frac', 0.0) * 100)} %", font=ctk.CTkFont(size=12, weight="bold"), text_color=ORANGE_PRIMARY, width=42)
+            self._comp_models_pct_lbl.pack(side="right")
         else:
             ctk.CTkLabel(info1, text=self.tr("comp_models_fail", cnt=cnt), font=ctk.CTkFont(size=12, weight="bold"), text_color="#EF4444").pack(anchor="w")
             ctk.CTkLabel(info1, text=self.tr("comp_models_desc_fail"), font=ctk.CTkFont(size=11), text_color=TEXT_BODY).pack(anchor="w")
@@ -2462,6 +2813,10 @@ class AutoClipApp(BaseApp):
         if not hasattr(self, "comp_rows_frame") or not self.comp_rows_frame.winfo_exists():
             return
 
+        if getattr(self, "_is_downloading_comp_ffmpeg", False) or getattr(self, "_is_downloading_comp_models", False):
+            self._render_components_static()
+            return
+
         self._check_gen = getattr(self, "_check_gen", 0) + 1
         my_gen = self._check_gen
 
@@ -2547,6 +2902,10 @@ class AutoClipApp(BaseApp):
                 self.after(80, finalize)
                 return
 
+            if getattr(self, "_is_downloading_comp_ffmpeg", False) or getattr(self, "_is_downloading_comp_models", False):
+                self._render_components_static()
+                return
+
             # --- Row 0: FFmpeg & FFprobe ---
             ffmpeg_ok, fp, fpp = results["ffmpeg"]
             row, t_lbl, s_lbl = row_refs[0]
@@ -2592,26 +2951,110 @@ class AutoClipApp(BaseApp):
         self.after(80, finalize)
 
     def _settings_download_ffmpeg_action(self):
-        self._prompt_ffmpeg_download()
-        self.after(1500, self._refresh_settings_components)
+        if getattr(self, "_is_downloading_comp_ffmpeg", False):
+            return
+        self._is_downloading_comp_ffmpeg = True
+        self._comp_ffmpeg_frac = 0.05
+        self._comp_ffmpeg_last_msg = "Zahajuji stahování FFmpeg..." if self.current_language == "cs" else "Starting FFmpeg download..."
+        self._render_components_static()
 
-    def _settings_download_models_action(self):
-        finished = [False]
+        def progress_cb(fraction: float, message: str):
+            self.after(0, lambda: self._update_ffmpeg_download_progress(fraction, message))
+
         def worker():
-            ensure_ai_models_present()
-            finished[0] = True
+            success, msg = download_ffmpeg_auto(progress_callback=progress_cb)
+            self.after(0, lambda: self._on_comp_ffmpeg_download_finished(success, msg))
 
         threading.Thread(target=worker, daemon=True).start()
 
-        def poll():
-            if not self.winfo_exists():
-                return
-            if finished[0]:
-                self._refresh_settings_components()
-            else:
-                self.after(200, poll)
+    def _update_ffmpeg_download_progress(self, fraction: float, message: str):
+        self._comp_ffmpeg_frac = fraction
+        self._comp_ffmpeg_last_msg = message
+        clamped = min(max(fraction, 0.0), 1.0)
+        pct_text = f"{int(clamped * 100)} %"
 
-        self.after(200, poll)
+        if hasattr(self, "_comp_ffmpeg_pbar") and self._comp_ffmpeg_pbar.winfo_exists():
+            self._comp_ffmpeg_pbar.set(clamped)
+        if hasattr(self, "_comp_ffmpeg_pct_lbl") and self._comp_ffmpeg_pct_lbl.winfo_exists():
+            self._comp_ffmpeg_pct_lbl.configure(text=pct_text)
+        if hasattr(self, "_comp_ffmpeg_sub_lbl") and self._comp_ffmpeg_sub_lbl.winfo_exists():
+            self._comp_ffmpeg_sub_lbl.configure(text=message)
+
+        # Mirror progress to main view status bar
+        if hasattr(self, "progress_bar") and self.progress_bar.winfo_exists():
+            self.progress_bar.set(clamped)
+        if hasattr(self, "lbl_status") and self.lbl_status.winfo_exists():
+            self.lbl_status.configure(text=message)
+        if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+            self.lbl_progress_pct.configure(text=pct_text)
+
+    def _on_comp_ffmpeg_download_finished(self, success: bool, msg: str):
+        self._is_downloading_comp_ffmpeg = False
+        self._check_ffmpeg_status()
+        self._render_components_static()
+        if success:
+            if hasattr(self, "progress_bar") and self.progress_bar.winfo_exists():
+                self.progress_bar.set(1.0)
+            if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                self.lbl_progress_pct.configure(text="100 %")
+            messagebox.showinfo("Hotovo" if self.current_language == "cs" else "Done", msg)
+        else:
+            messagebox.showerror(
+                "Chyba instalace FFmpeg" if self.current_language == "cs" else "FFmpeg Install Error",
+                f"{msg}\n\nTip: Nainstalujte FFmpeg ručně (winget install Gyan.FFmpeg na Windows)."
+            )
+
+    def _settings_download_models_action(self):
+        if getattr(self, "_is_downloading_comp_models", False):
+            return
+        self._is_downloading_comp_models = True
+        self._comp_models_frac = 0.0
+        self._comp_models_last_msg = "Zahajuji stahování AI modelů..." if self.current_language == "cs" else "Starting AI models download..."
+        self._render_components_static()
+
+        def progress_cb(fraction: float, message: str):
+            self.after(0, lambda: self._update_models_download_progress(fraction, message))
+
+        def worker():
+            success = ensure_ai_models_present(progress_callback=progress_cb)
+            self.after(0, lambda: self._on_comp_models_download_finished(success))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_models_download_progress(self, fraction: float, message: str):
+        self._comp_models_frac = fraction
+        self._comp_models_last_msg = message
+        clamped = min(max(fraction, 0.0), 1.0)
+        pct_text = f"{int(clamped * 100)} %"
+
+        if hasattr(self, "_comp_models_pbar") and self._comp_models_pbar.winfo_exists():
+            self._comp_models_pbar.set(clamped)
+        if hasattr(self, "_comp_models_pct_lbl") and self._comp_models_pct_lbl.winfo_exists():
+            self._comp_models_pct_lbl.configure(text=pct_text)
+        if hasattr(self, "_comp_models_sub_lbl") and self._comp_models_sub_lbl.winfo_exists():
+            self._comp_models_sub_lbl.configure(text=message)
+
+        # Mirror progress to main view status bar
+        if hasattr(self, "progress_bar") and self.progress_bar.winfo_exists():
+            self.progress_bar.set(clamped)
+        if hasattr(self, "lbl_status") and self.lbl_status.winfo_exists():
+            self.lbl_status.configure(text=message)
+        if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+            self.lbl_progress_pct.configure(text=pct_text)
+
+    def _on_comp_models_download_finished(self, success: bool):
+        self._is_downloading_comp_models = False
+        self._render_components_static()
+        if success:
+            if hasattr(self, "progress_bar") and self.progress_bar.winfo_exists():
+                self.progress_bar.set(1.0)
+            if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                self.lbl_progress_pct.configure(text="100 %")
+            msg = "Všechny Facecam AI modely byly úspěšně staženy (100 %) a jsou připraveny k použití." if self.current_language == "cs" else "All Facecam AI models were successfully downloaded (100%) and ready to use."
+            messagebox.showinfo("Hotovo" if self.current_language == "cs" else "Done", msg)
+        else:
+            msg = "Stahování některých AI modelů selhalo. Zkontrolujte připojení k internetu." if self.current_language == "cs" else "Failed to download some AI models. Check your internet connection."
+            messagebox.showerror("Chyba" if self.current_language == "cs" else "Error", msg)
 
     def _check_for_updates(self):
         self.btn_update.configure(state="disabled")
@@ -3487,20 +3930,12 @@ del "%~f0"
         self.lbl_sec_audio_sub.pack(anchor="w", padx=16, pady=(0, 8))
 
         self.audio_track_var = ctk.StringVar(value="Stopa 1 (výchozí)")
-        self.audio_dropdown = ctk.CTkOptionMenu(
+        self.audio_dropdown = ModernOptionMenu(
             box,
             values=["Stopa 1 (výchozí)"],
             variable=self.audio_track_var,
             width=540,
-            height=36,
-            dynamic_resizing=False,
-            fg_color=("#F3F4F6", "#20222B"),
-            text_color=TEXT_TITLE,
-            button_color=ORANGE_PRIMARY,
-            button_hover_color=ORANGE_HOVER,
-            dropdown_fg_color=BG_CARD,
-            dropdown_hover_color=("#E5E7EB", "#262833"),
-            dropdown_text_color=TEXT_TITLE
+            height=36
         )
         self.audio_dropdown.pack(anchor="w", padx=16, pady=(0, 14))
 
@@ -3534,8 +3969,14 @@ del "%~f0"
         q_btn.pack(side="left", padx=(8, 0))
 
         # Mode dropdown
-        self.mode_var = ctk.StringVar(value="Pouze akcni highlighty (sestřih křiku a reakcí)")
-        self.mode_dropdown = ctk.CTkOptionMenu(
+        saved_mode = self.config.get("detection_mode", "highlights")
+        if saved_mode == "silence":
+            init_mode = "Vyrézat pouze ticho (plná délka bez dlouhých pauz)"
+        else:
+            init_mode = "Pouze akcni highlighty (sestřih křiku a reakcí)"
+
+        self.mode_var = ctk.StringVar(value=init_mode)
+        self.mode_dropdown = ModernOptionMenu(
             box,
             values=[
                 "Pouze akcni highlighty (sestřih křiku a reakcí)",
@@ -3544,15 +3985,7 @@ del "%~f0"
             variable=self.mode_var,
             command=self._on_mode_dropdown_change,
             width=540,
-            height=36,
-            dynamic_resizing=False,
-            fg_color=("#F3F4F6", "#20222B"),
-            text_color=TEXT_TITLE,
-            button_color=ORANGE_PRIMARY,
-            button_hover_color=ORANGE_HOVER,
-            dropdown_fg_color=BG_CARD,
-            dropdown_hover_color=("#E5E7EB", "#262833"),
-            dropdown_text_color=TEXT_TITLE
+            height=36
         )
         self.mode_dropdown.pack(anchor="w", padx=16, pady=(0, 10))
 
@@ -3580,28 +4013,32 @@ del "%~f0"
         )
         q_dur.pack(side="left", padx=(8, 0))
 
-        self.target_dur_var = ctk.StringVar(value="Bez limitu (všechny zachycené momenty)")
-        self.target_dur_dropdown = ctk.CTkOptionMenu(
+        dur_labels = [
+            "Bez limitu (všechny zachycené momenty)",
+            "5 minut (rychlý sestřih / TikTok / Shorts kompilace)",
+            "10 minut (optimální pro YouTube video)",
+            "15 minut (delší YouTube video)",
+            "20 minut (rozsáhlý highlight)",
+            "30 minut (dlouhá stream kompilace)"
+        ]
+        saved_dur = self.config.get("target_duration", "none")
+        dur_key_map = {
+            "none": dur_labels[0],
+            "5min": dur_labels[1],
+            "10min": dur_labels[2],
+            "15min": dur_labels[3],
+            "20min": dur_labels[4],
+            "30min": dur_labels[5],
+        }
+        init_dur = dur_key_map.get(saved_dur, dur_labels[0])
+        self.target_dur_var = ctk.StringVar(value=init_dur)
+        self.target_dur_dropdown = ModernOptionMenu(
             box,
-            values=[
-                "Bez limitu (všechny zachycené momenty)",
-                "5 minut (rychlý sestřih / TikTok / Shorts kompilace)",
-                "10 minut (optimální pro YouTube video)",
-                "15 minut (delší YouTube video)",
-                "20 minut (rozsáhlý highlight)",
-                "30 minut (dlouhá stream kompilace)"
-            ],
+            values=dur_labels,
             variable=self.target_dur_var,
+            command=lambda _: self._queue_save_settings(),
             width=540,
-            height=34,
-            dynamic_resizing=False,
-            fg_color=("#F3F4F6", "#20222B"),
-            text_color=TEXT_TITLE,
-            button_color=ORANGE_PRIMARY,
-            button_hover_color=ORANGE_HOVER,
-            dropdown_fg_color=BG_CARD,
-            dropdown_hover_color=("#E5E7EB", "#262833"),
-            dropdown_text_color=TEXT_TITLE
+            height=36
         )
         self.target_dur_dropdown.pack(anchor="w", padx=16, pady=(2, 10))
 
@@ -3630,9 +4067,10 @@ del "%~f0"
         )
         self.q_thresh.pack(side="left", padx=(8, 0))
 
+        saved_thresh = float(self.config.get("sound_threshold", -14.0))
         self.lbl_threshold_val = ctk.CTkLabel(
             s1_frame,
-            text="-14.0 dBFS",
+            text=f"{saved_thresh:.1f} dBFS",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=ORANGE_ACCENT_TEXT
         )
@@ -3649,7 +4087,7 @@ del "%~f0"
             button_color=ORANGE_PRIMARY,
             button_hover_color=ORANGE_HOVER
         )
-        self.slider_threshold.set(-14.0)
+        self.slider_threshold.set(saved_thresh)
         self.slider_threshold.pack(fill="x", padx=16, pady=(0, 8))
         self._disable_slider_mousewheel(self.slider_threshold)
 
@@ -3675,7 +4113,8 @@ del "%~f0"
         )
         q_p_bef.pack(side="left", padx=(6, 0))
 
-        self.lbl_pad_before = ctk.CTkLabel(p_before_hdr, text="4.0 s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        saved_pad_b = float(self.config.get("pad_before", 4.0))
+        self.lbl_pad_before = ctk.CTkLabel(p_before_hdr, text=f"{saved_pad_b:.1f} s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
         self.lbl_pad_before.pack(side="right")
 
         self.slider_pad_before = ctk.CTkSlider(
@@ -3683,13 +4122,13 @@ del "%~f0"
             from_=0,
             to=10,
             number_of_steps=40,
-            command=lambda v: self.lbl_pad_before.configure(text=f"{v:.1f} s"),
+            command=self._on_pad_before_change,
             fg_color=TRACK_COLOR,
             progress_color=ORANGE_PRIMARY,
             button_color=ORANGE_PRIMARY,
             button_hover_color=ORANGE_HOVER
         )
-        self.slider_pad_before.set(4.0)
+        self.slider_pad_before.set(saved_pad_b)
         self.slider_pad_before.pack(fill="x", pady=(2, 6))
         self._disable_slider_mousewheel(self.slider_pad_before)
 
@@ -3711,7 +4150,8 @@ del "%~f0"
         )
         q_p_aft.pack(side="left", padx=(6, 0))
 
-        self.lbl_pad_after = ctk.CTkLabel(p_after_hdr, text="2.0 s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        saved_pad_a = float(self.config.get("pad_after", 2.0))
+        self.lbl_pad_after = ctk.CTkLabel(p_after_hdr, text=f"{saved_pad_a:.1f} s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
         self.lbl_pad_after.pack(side="right")
 
         self.slider_pad_after = ctk.CTkSlider(
@@ -3719,13 +4159,13 @@ del "%~f0"
             from_=0,
             to=10,
             number_of_steps=40,
-            command=lambda v: self.lbl_pad_after.configure(text=f"{v:.1f} s"),
+            command=self._on_pad_after_change,
             fg_color=TRACK_COLOR,
             progress_color=ORANGE_PRIMARY,
             button_color=ORANGE_PRIMARY,
             button_hover_color=ORANGE_HOVER
         )
-        self.slider_pad_after.set(2.0)
+        self.slider_pad_after.set(saved_pad_a)
         self.slider_pad_after.pack(fill="x", pady=(2, 6))
         self._disable_slider_mousewheel(self.slider_pad_after)
 
@@ -3754,7 +4194,8 @@ del "%~f0"
         )
         q_gap.pack(side="left", padx=(6, 0))
 
-        self.lbl_gap_val = ctk.CTkLabel(gap_hdr, text="2.0 s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        saved_gap = float(self.config.get("min_gap", 2.0))
+        self.lbl_gap_val = ctk.CTkLabel(gap_hdr, text=f"{saved_gap:.1f} s", text_color=ORANGE_ACCENT_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
         self.lbl_gap_val.pack(side="right")
 
         self.slider_gap = ctk.CTkSlider(
@@ -3762,13 +4203,13 @@ del "%~f0"
             from_=0,
             to=6,
             number_of_steps=60,
-            command=lambda v: self.lbl_gap_val.configure(text=f"{v:.1f} s"),
+            command=self._on_gap_change,
             fg_color=TRACK_COLOR,
             progress_color=ORANGE_PRIMARY,
             button_color=ORANGE_PRIMARY,
             button_hover_color=ORANGE_HOVER
         )
-        self.slider_gap.set(2.0)
+        self.slider_gap.set(saved_gap)
         self.slider_gap.pack(fill="x", padx=16, pady=(0, 10))
         self._disable_slider_mousewheel(self.slider_gap)
 
@@ -3779,11 +4220,13 @@ del "%~f0"
         f_hdr = ctk.CTkFrame(facecam_box, fg_color="transparent")
         f_hdr.pack(fill="x", padx=12, pady=(10, 4))
 
-        self.facecam_ai_var = ctk.BooleanVar(value=True)
+        saved_fc = bool(self.config.get("facecam_enabled", True))
+        self.facecam_ai_var = ctk.BooleanVar(value=saved_fc)
         self.chk_facecam_ai = ctk.CTkCheckBox(
             f_hdr,
             text=self.tr("chk_facecam"),
             variable=self.facecam_ai_var,
+            command=self._queue_save_settings,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=ORANGE_PRIMARY,
             hover_color=ORANGE_HOVER,
@@ -3843,45 +4286,43 @@ del "%~f0"
         )
         q_fmt.pack(side="left", padx=(8, 0))
 
-        # Format selector (Dropdown menu)
-        self.format_var = ctk.StringVar(value="Hotové MP4 video (rychlý bezztrátový FFmpeg střih)")
-        self.format_dropdown = ctk.CTkOptionMenu(
+        # Format selector (Modern Dropdown menu)
+        saved_fmt = self.config.get("export_format", "mp4")
+        init_fmt = "EDL Timeline (.edl pro DaVinci Resolve a Premiere Pro)" if saved_fmt == "edl" else "Hotové MP4 video (rychlý bezztrátový FFmpeg střih)"
+        self.format_var = ctk.StringVar(value=init_fmt)
+        self.format_dropdown = ModernOptionMenu(
             box,
             values=[
                 "Hotové MP4 video (rychlý bezztrátový FFmpeg střih)",
                 "EDL Timeline (.edl pro DaVinci Resolve a Premiere Pro)"
             ],
             variable=self.format_var,
+            command=lambda _: self._queue_save_settings(),
             width=540,
-            height=36,
-            dynamic_resizing=False,
-            fg_color=("#F3F4F6", "#20222B"),
-            text_color=TEXT_TITLE,
-            button_color=ORANGE_PRIMARY,
-            button_hover_color=ORANGE_HOVER,
-            dropdown_fg_color=BG_CARD,
-            dropdown_hover_color=("#E5E7EB", "#262833"),
-            dropdown_text_color=TEXT_TITLE
+            height=36
         )
         self.format_dropdown.pack(anchor="w", padx=16, pady=(0, 12))
 
-        # Output folder row
-        out_row = ctk.CTkFrame(box, fg_color="transparent")
-        out_row.pack(fill="x", padx=16, pady=(0, 14))
-
-        self.btn_change_out = ctk.CTkButton(
-            out_row,
-            text=self.tr("btn_change_out"),
-            command=self._on_select_output_dir,
-            width=180,
-            height=32,
-            fg_color=("#F3F4F6", "#20222B"),
-            hover_color=("#E5E7EB", "#2B2E3B"),
+        # Output folder interactive card (Logi Options+ style)
+        out_card = ctk.CTkFrame(
+            box,
+            corner_radius=10,
+            fg_color=BG_CARD_INNER,
             border_width=1,
-            border_color=BORDER_SUBTLE,
-            text_color=TEXT_TITLE
+            border_color=BORDER_CARD
         )
-        self.btn_change_out.pack(side="left")
+        out_card.pack(fill="x", padx=16, pady=(0, 14))
+
+        out_inner = ctk.CTkFrame(out_card, fg_color="transparent")
+        out_inner.pack(fill="x", padx=12, pady=10)
+
+        icon_lbl = ctk.CTkLabel(
+            out_inner,
+            text="📁",
+            font=ctk.CTkFont(size=16),
+            width=26
+        )
+        icon_lbl.pack(side="left", padx=(0, 8))
 
         init_out_text = (
             f"{self.tr('out_dir_custom')}{self.default_export_dir}"
@@ -3889,20 +4330,38 @@ del "%~f0"
             else self.tr("out_dir_default")
         )
         self.lbl_output_dir = ctk.CTkLabel(
-            out_row,
+            out_inner,
             text=init_out_text,
             font=ctk.CTkFont(size=12),
             text_color=TEXT_TITLE if (self.default_export_dir and Path(self.default_export_dir).is_dir()) else TEXT_BODY,
             anchor="w"
         )
-        self.lbl_output_dir.pack(side="left", fill="x", expand=True, padx=12)
+        self.lbl_output_dir.pack(side="left", fill="x", expand=True)
+
+        self.btn_change_out = ctk.CTkButton(
+            out_inner,
+            text=self.tr("btn_change_out"),
+            command=self._on_select_output_dir,
+            width=140,
+            height=30,
+            corner_radius=6,
+            fg_color=BG_CARD,
+            hover_color=("#E5E7EB", "#252834"),
+            border_width=1,
+            border_color=BORDER_CARD,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_TITLE
+        )
+        self.btn_change_out.pack(side="right", padx=(8, 0))
 
         # Option A: Interactive review editor & preview checkbox
-        self.review_segments_var = ctk.BooleanVar(value=True)
+        saved_rev = bool(self.config.get("review_segments", True))
+        self.review_segments_var = ctk.BooleanVar(value=saved_rev)
         self.chk_review_segments = ctk.CTkCheckBox(
             box,
             text=self.tr("chk_review_segments"),
             variable=self.review_segments_var,
+            command=self._queue_save_settings,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=ORANGE_PRIMARY,
             hover_color=ORANGE_HOVER,
@@ -3961,14 +4420,25 @@ del "%~f0"
         self.progress_bar.pack(fill="x", padx=16, pady=(4, 6))
         self.progress_bar.set(0.0)
 
-        # Status text
+        # Status row: text message on left, percentage label on right
+        self.status_row = ctk.CTkFrame(box, fg_color="transparent")
+        self.status_row.pack(fill="x", padx=16, pady=(0, 10))
+
         self.lbl_status = ctk.CTkLabel(
-            box,
+            self.status_row,
             text=self.tr("status_ready"),
             font=ctk.CTkFont(size=13),
             text_color=TEXT_TITLE
         )
-        self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+        self.lbl_status.pack(side="left")
+
+        self.lbl_progress_pct = ctk.CTkLabel(
+            self.status_row,
+            text="",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=ORANGE_PRIMARY
+        )
+        self.lbl_progress_pct.pack(side="right")
 
         # Result row (Hidden initially - minimal checkmark + folder link)
         self.result_card = ctk.CTkFrame(box, fg_color="transparent")
@@ -4082,8 +4552,12 @@ del "%~f0"
         self.after(0, lambda: self._on_download_finished(success, msg))
 
     def _update_download_progress(self, fraction: float, message: str):
-        self.progress_bar.set(min(max(fraction, 0.0), 1.0))
+        clamped = min(max(fraction, 0.0), 1.0)
+        pct_text = f"{int(clamped * 100)} %"
+        self.progress_bar.set(clamped)
         self.lbl_status.configure(text=message)
+        if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+            self.lbl_progress_pct.configure(text=pct_text)
 
     def _on_download_finished(self, success: bool, msg: str):
         self.is_downloading_ffmpeg = False
@@ -4091,19 +4565,101 @@ del "%~f0"
 
         if success:
             self.progress_bar.set(1.0)
+            if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                self.lbl_progress_pct.configure(text="100 %")
             self.lbl_status.configure(text="FFmpeg úspěšně nainstalován a připraven!")
             messagebox.showinfo("Hotovo", msg)
         else:
             self.progress_bar.set(0.0)
+            if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                self.lbl_progress_pct.configure(text="")
             self.lbl_status.configure(text="Stažení FFmpeg selhalo.")
             messagebox.showerror("Chyba instalace FFmpeg", f"{msg}\n\nTip: Nainstalujte FFmpeg ručně (brew install ffmpeg na macOS, winget install Gyan.FFmpeg na Windows).")
 
     # -------------------------------------------------------------------------
-    # Helper & Event Handlers
+    # Helper & Event Handlers & Persistent Settings
     # -------------------------------------------------------------------------
+
+    def _queue_save_settings(self):
+        """Debounced settings save to avoid excessive disk I/O while moving sliders."""
+        timer = getattr(self, "_save_settings_timer", None)
+        if timer:
+            try:
+                self.after_cancel(timer)
+            except Exception:
+                pass
+        self._save_settings_timer = self.after(350, self._save_all_settings_to_config)
+
+    def _save_all_settings_to_config(self):
+        """Persists all current parameters and user selections to AppData config.json."""
+        try:
+            if hasattr(self, "mode_var"):
+                self.config["detection_mode"] = "highlights" if "highlighty" in self.mode_var.get().lower() else "silence"
+            if hasattr(self, "target_dur_var"):
+                cur_dur = self.target_dur_var.get()
+                dur_key = "none"
+                for k, v in [("5min", "5 minut"), ("10min", "10 minut"), ("15min", "15 minut"), ("20min", "20 minut"), ("30min", "30 minut")]:
+                    if v in cur_dur:
+                        dur_key = k
+                        break
+                self.config["target_duration"] = dur_key
+            if hasattr(self, "slider_threshold"):
+                self.config["sound_threshold"] = round(float(self.slider_threshold.get()), 1)
+            if hasattr(self, "slider_pad_before"):
+                self.config["pad_before"] = round(float(self.slider_pad_before.get()), 1)
+            if hasattr(self, "slider_pad_after"):
+                self.config["pad_after"] = round(float(self.slider_pad_after.get()), 1)
+            if hasattr(self, "slider_gap"):
+                self.config["min_gap"] = round(float(self.slider_gap.get()), 1)
+            if hasattr(self, "facecam_ai_var"):
+                self.config["facecam_enabled"] = bool(self.facecam_ai_var.get())
+            if hasattr(self, "format_var"):
+                self.config["export_format"] = "edl" if "edl" in self.format_var.get().lower() else "mp4"
+            if hasattr(self, "review_segments_var"):
+                self.config["review_segments"] = bool(self.review_segments_var.get())
+            if hasattr(self, "auto_open_folder"):
+                self.config["auto_open_folder"] = bool(self.auto_open_folder)
+            if hasattr(self, "default_export_dir"):
+                self.config["default_export_dir"] = str(self.default_export_dir)
+            if hasattr(self, "current_language"):
+                self.config["language"] = self.current_language
+
+            save_app_config(self.config)
+        except Exception as e:
+            print(f"[Config] Error saving settings: {e}")
+
+    def _on_app_exit(self):
+        """Handles clean application exit, confirming if busy and saving all configuration."""
+        if self.is_processing:
+            title = "Ukončit aplikaci" if self.current_language == "cs" else "Exit Application"
+            msg = ("Právě probíhá střih videa. Opravdu si přejete aplikaci ukončit?\n\nRozpracovaný proces bude zrušen."
+                   if self.current_language == "cs"
+                   else "Video cutting is currently in progress. Do you really want to exit?\n\nThe process will be cancelled.")
+            if not messagebox.askyesno(title, msg, parent=self):
+                return
+            self.cancel_event.set()
+
+        self._save_all_settings_to_config()
+        self.destroy()
 
     def _on_threshold_slider_change(self, value: float):
         self.lbl_threshold_val.configure(text=f"{value:.1f} dBFS")
+        self._queue_save_settings()
+
+    def _on_pad_before_change(self, v: float):
+        if hasattr(self, "lbl_pad_before"):
+            self.lbl_pad_before.configure(text=f"{v:.1f} s")
+        self._queue_save_settings()
+
+    def _on_pad_after_change(self, v: float):
+        if hasattr(self, "lbl_pad_after"):
+            self.lbl_pad_after.configure(text=f"{v:.1f} s")
+        self._queue_save_settings()
+
+    def _on_gap_change(self, v: float):
+        if hasattr(self, "lbl_gap_val"):
+            self.lbl_gap_val.configure(text=f"{v:.1f} s")
+        self._queue_save_settings()
 
     def _on_mode_dropdown_change(self, choice: str):
         if "highlighty" in choice.lower():
@@ -4120,6 +4676,7 @@ del "%~f0"
                 tt = getattr(self.q_thresh, "_tooltip", None)
                 if tt is not None:
                     tt.set_recommendation("-28.0 dBFS pro ticho (odstraní mrtvé pauzy bez hlasu).")
+        self._queue_save_settings()
 
     def _on_select_file(self):
         """Opens file dialog for video selection and parses metadata."""
@@ -4291,8 +4848,9 @@ del "%~f0"
         self.btn_select_file.configure(state="disabled")
         self.btn_cancel.configure(state="normal")
         self.result_card.pack_forget()
-        self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+        self.status_row.pack(fill="x", padx=16, pady=(0, 10))
         self.progress_bar.set(0.0)
+        self.lbl_progress_pct.configure(text="0 %")
 
         # Collect parameters
         track_str = self.audio_track_var.get()
@@ -4599,6 +5157,8 @@ del "%~f0"
 
             full_text = f"{pct}%{eta_str} • {message}"
             self.lbl_status.configure(text=full_text)
+            if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                self.lbl_progress_pct.configure(text=f"{pct} %")
         self.after(0, update)
 
     def _on_finished_ui(
@@ -4617,18 +5177,27 @@ del "%~f0"
 
             if cancelled:
                 self.progress_bar.set(0.0)
+                if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                    self.lbl_progress_pct.configure(text="")
                 self.result_card.pack_forget()
-                self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+                if hasattr(self, "status_row") and self.status_row.winfo_exists():
+                    self.status_row.pack(fill="x", padx=16, pady=(0, 10))
                 self.lbl_status.configure(text="Zpracování bylo zrušeno uživatelem.")
                 messagebox.showinfo("Zrušeno", "Operace byla zrušena.")
             elif error_msg:
                 self.result_card.pack_forget()
-                self.lbl_status.pack(anchor="w", padx=16, pady=(0, 10))
+                if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                    self.lbl_progress_pct.configure(text="")
+                if hasattr(self, "status_row") and self.status_row.winfo_exists():
+                    self.status_row.pack(fill="x", padx=16, pady=(0, 10))
                 self.lbl_status.configure(text="Zpracování selhalo.")
                 messagebox.showerror("Chyba zpracování", error_msg)
             else:
                 self.progress_bar.set(1.0)
-                self.lbl_status.pack_forget()
+                if hasattr(self, "lbl_progress_pct") and self.lbl_progress_pct.winfo_exists():
+                    self.lbl_progress_pct.configure(text="100 %")
+                if hasattr(self, "status_row") and self.status_row.winfo_exists():
+                    self.status_row.pack_forget()
                 self.result_card.pack(anchor="w", padx=16, pady=(2, 12))
                 if getattr(self, "auto_open_folder", True):
                     self.after(600, self._on_open_result_folder)

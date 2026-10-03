@@ -25,13 +25,44 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-if sys.platform.startswith("win"):
+from ffmpeg_utils import find_binary, get_base_dir
+
+def _init_fonts() -> str:
+    chosen = "Segoe UI"
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            fonts_dir = get_base_dir() / "assets" / "fonts"
+            if fonts_dir.is_dir():
+                for f in fonts_dir.glob("*.ttf"):
+                    try:
+                        ctypes.windll.gdi32.AddFontResourceExW(str(f), 0x10, 0)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     try:
-        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+        import tkinter.font as tkfont
+        temp = None
+        if not getattr(tk, "_default_root", None):
+            temp = tk.Tk()
+            temp.withdraw()
+        fams = set(tkfont.families())
+        for pref in ["Poppins", "Montserrat", "Segoe UI Variable Text", "Segoe UI"]:
+            if pref in fams:
+                chosen = pref
+                break
+        if temp:
+            temp.destroy()
+    except Exception:
+        chosen = "Poppins" if sys.platform.startswith("win") else "Segoe UI"
+    try:
+        ctk.ThemeManager.theme["CTkFont"]["family"] = chosen
     except Exception:
         pass
+    return chosen
 
-from ffmpeg_utils import find_binary, get_base_dir
+APP_FONT = _init_fonts()
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +226,7 @@ class ModernCheckCircle(tk.Canvas):
         self.configure(bg=cur_bg)
         if self.checked:
             self.create_oval(3, 3, 21, 21, fill=ORANGE, outline=ORANGE)
-            self.create_text(12, 11, text="✓", fill="#FFFFFF", font=("Segoe UI", 9, "bold"))
+            self.create_text(12, 11, text="✓", fill="#FFFFFF", font=(APP_FONT, 9, "bold"))
         else:
             bd = "#4B5563" if ctk.get_appearance_mode().lower() == "dark" else "#94A3B8"
             self.create_oval(3, 3, 21, 21, fill=cur_bg, outline=bd, width=1.5)
@@ -693,11 +724,11 @@ class SegmentReviewDialog(ctk.CTkToplevel):
 
     def _build_canvas_rows(self):
         """Vytvoří moderní strukturované řádky momentů (rychlé nativní Tk komponenty s Logi estetikou)."""
-        font_num = ("Segoe UI", 10, "bold")
-        font_time = ("Segoe UI", 10, "bold")
-        font_chip = ("Segoe UI", 9)
-        font_ai = ("Segoe UI", 9, "bold")
-        font_pbtn = ("Segoe UI", 10, "bold")
+        font_num = (APP_FONT, 10, "bold")
+        font_time = (APP_FONT, 10, "bold")
+        font_chip = (APP_FONT, 9)
+        font_ai = (APP_FONT, 9, "bold")
+        font_pbtn = (APP_FONT, 10, "bold")
 
         for i, seg in enumerate(self.segs):
             start, end = seg[0], seg[1]
